@@ -22,12 +22,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import credenciais  # noqa: E402
 from config.estrutura import CARGOS, ESTRUTURA, MENSAGEM_ALVO  # noqa: E402
 
 load_dotenv()
-
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-GUILD_ID = os.getenv("DISCORD_GUILD_ID")
 
 criados: list[str] = []
 existiam: list[str] = []
@@ -166,10 +164,16 @@ async def main(dry: bool) -> None:
     @client.event
     async def on_ready():
         try:
-            guild = client.get_guild(int(GUILD_ID))
+            guild = client.get_guild(GUILD_ID)
             if guild is None:
-                print(f"ERRO: o bot nao esta no servidor {GUILD_ID}. "
-                      "Convide-o com permissao de Administrador primeiro.")
+                if GUILD_ID == client.user.id:
+                    print("\nERRO: DISCORD_GUILD_ID esta com a APPLICATION ID do bot.\n"
+                          "  O ID do servidor nao vem do portal de desenvolvedores.\n"
+                          "  Discord > Configuracoes > Avancado > Modo desenvolvedor,\n"
+                          "  depois botao direito no servidor > Copiar ID do servidor.")
+                else:
+                    print(f"\nERRO: o bot nao esta no servidor {GUILD_ID}.\n"
+                          "  Rode  python convite.py  para gerar o link de autorizacao.")
                 return
 
             print(f"\nServidor: {guild.name}  ({guild.id})")
@@ -196,7 +200,5 @@ if __name__ == "__main__":
                     help="mostra o que seria criado, sem alterar nada")
     args = ap.parse_args()
 
-    if not TOKEN or not GUILD_ID:
-        sys.exit("Faltando DISCORD_BOT_TOKEN ou DISCORD_GUILD_ID no .env")
-
+    TOKEN, GUILD_ID = credenciais.carregar()
     asyncio.run(main(args.dry_run))

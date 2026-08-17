@@ -38,9 +38,12 @@ CONFIG = json.loads((RAIZ / "config" / "marcos.json").read_text(encoding="utf-8"
 ESTADO_ARQ = RAIZ / "estado.json"
 
 TZ = ZoneInfo(CONFIG["timezone"])
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-GUILD_ID = int(os.getenv("DISCORD_GUILD_ID", "0"))
 CANAL_PRAZOS = os.getenv("CANAL_PRAZOS", "editais-e-prazos")
+
+# Validado so quando o bot vai realmente subir - importar o modulo para testar
+# o briefing offline nao deve exigir credencial.
+TOKEN: str = ""
+GUILD_ID: int = 0
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
 
 
@@ -294,6 +297,8 @@ async def cmd_questoes(interacao: discord.Interaction, materia: str, feitas: int
 
 
 if __name__ == "__main__":
-    if not TOKEN or not GUILD_ID:
-        sys.exit("Faltando DISCORD_BOT_TOKEN ou DISCORD_GUILD_ID no .env")
+    sys.path.insert(0, str(RAIZ))
+    from config import credenciais
+
+    TOKEN, GUILD_ID = credenciais.carregar()
     bot.run(TOKEN)
