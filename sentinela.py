@@ -52,7 +52,12 @@ CANAL_BOAS_VINDAS = "🤙🏽┇boas-vindas"
 CANAL_METAS = "metas-do-dia"
 
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
-HORA_BLOCO = time(hour=17, minute=45, tzinfo=TZ)       # 15 min antes do bloco
+# O bloco muda de horario no fim de semana: 18h nos dias uteis, 09h30 no
+# sabado e no domingo. Um aviso unico as 17h45 chegava DEPOIS do bloco de
+# sabado ter passado, o que e pior que nao avisar.
+HORA_BLOCO_SEMANA = time(hour=17, minute=45, tzinfo=TZ)
+HORA_BLOCO_FDS = time(hour=9, minute=15, tzinfo=TZ)
+HORA_LOG = time(hour=22, minute=30, tzinfo=TZ)        # fecha o dia
 HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)   # domingo
 
 DATA_PROVA = datetime(2026, 11, 22, tzinfo=TZ)
@@ -257,13 +262,15 @@ class Sentinela(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        orfas = db.fechar_orfas(con)
-        if orfas:
-            print(f"{orfas} sessão(ões) de voz órfã(s) fechada(s).")
+        # As sessoes orfas NAO sao fechadas aqui: quem ainda esta na call
+        # continua estudando, e fechar cegamente picava a sessao dela em
+        # pedacos a cada restart meu. O tratamento certo precisa saber quem
+        # esta em call, e isso so existe no on_ready.
         db.migrar_estado_json(con, RAIZ / "estado.json")
         briefing_diario.start()
         aviso_do_bloco.start()
         relatorio_semanal.start()
+        fechamento_diario.start()
         ler_anki.start()
 
     async def on_ready(self):
@@ -284,14 +291,22 @@ class Sentinela(discord.Client):
             self._comandos_sincronizados = True
             print(f"Comandos sincronizados em {g.name}.")
 
-        # Quem ja estava em call quando o bot subiu tambem conta.
-        if g:
-            for canal in g.voice_channels:
-                if canal.category and canal.category.name == CATEGORIA_ESTUDO:
-                    for m in canal.members:
-                        if not m.bot:
-                            db.abrir_sessao(con, m.id, m.display_name, canal.name)
-        print(f"Sentinela no ar como {self.user}.")
+        # Quem esta em call agora mantem a sessao aberta, sem fechar e reabrir:
+        # do contrario cada restart picava uma sessao unica em varias.
+        em_call = set()
+        for canal in g.voice_channels:
+            if canal.category and canal.category.name == CATEGORIA_ESTUDO:
+                for m in canal.members:
+                    if not m.bot:
+                        em_call.add(m.id)
+                        db.abrir_sessao(con, m.id, m.display_name, canal.name)
+
+        orfas = db.fechar_orfas(con, preservar=em_call)
+        if orfas:
+            print(f"{orfas} sessão(ões) órfã(s) fechada(s) "
+                  f"(quem está em call foi preservado).")
+        print(f"Sentinela no ar como {self.user}. "
+              f"{len(em_call)} em call de estudo agora.")
 
 
 def guild_alvo(cliente: discord.Client):
@@ -446,14 +461,20 @@ async def briefing_diario():
             db.vincular_mensagem(con, msg.id, m["id"])
 
 
-@tasks.loop(time=HORA_BLOCO)
+@tasks.loop(time=[HORA_BLOCO_SEMANA, HORA_BLOCO_FDS])
 async def aviso_do_bloco():
     """15 min antes do bloco, diz o que estudar hoje. Sem isto, o comeco do
     bloco vira decisao, e decisao no fim do dia e onde o plano se perde."""
+    agora = datetime.now(TZ)
+    fim_de_semana = agora.weekday() >= 5
+    # Dispara nos dois horarios; so publica no que corresponde ao dia.
+    if fim_de_semana != (agora.hour < 12):
+        return
+
     canal = canal_por_nome(CANAL_METAS)
     if canal is None:
         return
-    hoje = datetime.now(TZ).date()
+    hoje = agora.date()
     b = bloco_do_dia(hoje)
 
     em = discord.Embed(
@@ -512,6 +533,55 @@ async def ler_anki():
         print(f"Anki: falha ({e}). A fila fica intacta, tento de novo em 30 min.")
 
 
+def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
+    b = bloco_do_dia(dia)
+    houve = [p for p in pessoas if p["segundos_voz"] or p["questoes"] or p["erros"]]
+
+    em = discord.Embed(
+        title=f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}",
+        description=f"**{b['rotulo']}** · bloco previsto {b['hora']}",
+        colour=0x57F287 if houve else 0xED4245)
+
+    if not houve:
+        em.add_field(
+            name="🔴 Dia sem registro",
+            value="Nenhuma call, nenhuma questão, nenhum erro.\n"
+                  "*O que estava previsto:* " + b["conteudo"][:220],
+            inline=False)
+        em.set_footer(text=MINIMO)
+        return em
+
+    for p in houve:
+        pct = 100 * p["acertos"] / p["questoes"] if p["questoes"] else None
+        linhas = [f"⏱️ **{hm(p['segundos_voz'])}** em call"]
+        if p["questoes"]:
+            sinal = "🟢" if pct >= 70 else "🟡" if pct >= 60 else "🔴"
+            linhas.append(f"✏️ {sinal} {p['acertos']}/{p['questoes']} = {pct:.0f}%")
+        else:
+            linhas.append("✏️ nenhuma questão registrada")
+        linhas.append(f"📗 {p['erros']} erro(s) · {p['cards']} card(s) novo(s)")
+        linhas.append("✅ mínimo fechado" if p["minimo"]
+                      else "⚪ mínimo não registrado (`/estudei`)")
+        em.add_field(name=p["usuario"], value="\n".join(linhas), inline=True)
+
+    em.add_field(name="Previsto para hoje", value=b["conteudo"][:400], inline=False)
+    em.set_footer(text=f"Prova em {(DATA_PROVA.date() - dia).days} dias")
+    return em
+
+
+@tasks.loop(time=HORA_LOG)
+async def fechamento_diario():
+    """Fecha o dia e grava. E o log que amarra o que aconteceu ao que o
+    calendario mandava estudar - sem isso, tempo em call vira numero solto."""
+    dia = datetime.now(TZ).date()
+    semana = bloco_do_dia(dia)["rotulo"]
+    pessoas = db.fechar_dia(con, dia.isoformat(), semana)
+
+    canal = canal_por_nome("diario")
+    if canal:
+        await canal.send(embed=montar_log_diario(dia, pessoas))
+
+
 @tasks.loop(time=HORA_RELATORIO)
 async def relatorio_semanal():
     if datetime.now(TZ).weekday() != 6:      # so domingo
@@ -524,6 +594,7 @@ async def relatorio_semanal():
 @briefing_diario.before_loop
 @aviso_do_bloco.before_loop
 @relatorio_semanal.before_loop
+@fechamento_diario.before_loop
 @ler_anki.before_loop
 async def antes():
     await bot.wait_until_ready()
@@ -584,7 +655,10 @@ async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta
     card_id = db.enfileirar_card(con, i.user.id, i.user.display_name,
                                  materia, pergunta, resposta, fonte="/erro")
     pend = len(db.cards_pendentes(con))
-    db.registrar_erro(con, i.user.id, i.user.display_name, card_id or 0)
+    # None, nao 0: mensagem_id e UNIQUE, e o SQLite aceita varios NULL mas so
+    # um 0. Com `card_id or 0`, o segundo /erro do dia que caisse em duplicata
+    # era engolido pelo INSERT OR IGNORE e sumia da contagem.
+    db.registrar_erro(con, i.user.id, i.user.display_name, card_id)
 
     await i.response.send_message(
         f"📗 **{materia}** — card na fila do Anki *(#{card_id}, {pend} pendente(s))*\n"

@@ -102,6 +102,24 @@ CREATE TABLE IF NOT EXISTS anki_dificeis (
     atualizado  TEXT NOT NULL
 );
 
+-- Fechamento do dia, uma linha por pessoa. Guardado, e nao so postado, porque
+-- e o que permite dizer depois "voce cumpriu 9 dos 14 dias da S1" - adesao ao
+-- plano, que nenhuma das outras tabelas responde sozinha.
+CREATE TABLE IF NOT EXISTS log_diario (
+    dia          TEXT NOT NULL,
+    usuario_id   INTEGER NOT NULL,
+    usuario      TEXT NOT NULL,
+    semana       TEXT,
+    segundos_voz INTEGER NOT NULL DEFAULT 0,
+    questoes     INTEGER NOT NULL DEFAULT 0,
+    acertos      INTEGER NOT NULL DEFAULT 0,
+    erros        INTEGER NOT NULL DEFAULT 0,
+    cards        INTEGER NOT NULL DEFAULT 0,
+    minimo       INTEGER NOT NULL DEFAULT 0,
+    fechado_em   TEXT NOT NULL,
+    PRIMARY KEY (dia, usuario_id)
+);
+
 CREATE TABLE IF NOT EXISTS confirmacoes (
     marco_id    TEXT PRIMARY KEY,
     usuario_id  INTEGER,
@@ -159,12 +177,19 @@ def fechar_sessao(con, usuario_id: int) -> int:
     return segundos
 
 
-def fechar_orfas(con) -> int:
+def fechar_orfas(con, preservar: set[int] | None = None) -> int:
     """Sessao que ficou aberta porque o bot caiu. Fecha pelo ultimo instante
     conhecido em vez de jogar fora - perder hora estudada desmotiva mais que
-    contar de menos."""
+    contar de menos.
+
+    `preservar` traz quem ESTA em call agora: essa sessao continua aberta, ou
+    cada restart do bot picaria uma sessao unica em varias e o relatorio
+    mostraria 5 sessoes de 10 min onde houve uma de 50.
+    """
+    preservar = preservar or set()
     abertas = con.execute(
-        "SELECT id, inicio FROM sessoes_voz WHERE fim IS NULL").fetchall()
+        "SELECT id, inicio, usuario_id FROM sessoes_voz WHERE fim IS NULL").fetchall()
+    abertas = [l for l in abertas if l["usuario_id"] not in preservar]
     for linha in abertas:
         inicio = datetime.fromisoformat(linha["inicio"])
         # Teto de 4h: sessao aberta alem disso quase certamente e o bot que caiu.
@@ -310,6 +335,63 @@ def resumo(con, desde: str, ate: str) -> dict:
 
     return {"voz": voz, "questoes_pessoa": q_pessoa, "questoes_materia": q_materia,
             "minimos": minimos, "erros": erros, "desde": desde, "ate": ate}
+
+
+def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
+    """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
+    dia recalcula em vez de duplicar."""
+    pessoas: dict[int, dict] = {}
+
+    def slot(uid, nome):
+        return pessoas.setdefault(uid, {
+            "usuario_id": uid, "usuario": nome, "segundos_voz": 0,
+            "questoes": 0, "acertos": 0, "erros": 0, "cards": 0, "minimo": 0})
+
+    for r in con.execute(
+            "SELECT usuario_id, usuario, SUM(segundos) s FROM sessoes_voz"
+            " WHERE date(inicio)=? AND segundos IS NOT NULL GROUP BY usuario_id",
+            (dia,)):
+        slot(r["usuario_id"], r["usuario"])["segundos_voz"] = r["s"] or 0
+
+    for r in con.execute(
+            "SELECT usuario_id, usuario, SUM(feitas) f, SUM(acertos) a FROM questoes"
+            " WHERE dia=? GROUP BY usuario_id", (dia,)):
+        d = slot(r["usuario_id"], r["usuario"])
+        d["questoes"], d["acertos"] = r["f"] or 0, r["a"] or 0
+
+    for r in con.execute(
+            "SELECT usuario_id, usuario, COUNT(*) n FROM erros WHERE dia=?"
+            " GROUP BY usuario_id", (dia,)):
+        slot(r["usuario_id"], r["usuario"])["erros"] = r["n"]
+
+    for r in con.execute(
+            "SELECT usuario_id, usuario, COUNT(*) n FROM cards WHERE dia=?"
+            " GROUP BY usuario_id", (dia,)):
+        slot(r["usuario_id"], r["usuario"])["cards"] = r["n"]
+
+    for r in con.execute(
+            "SELECT usuario_id, usuario FROM minimos WHERE dia=?", (dia,)):
+        slot(r["usuario_id"], r["usuario"])["minimo"] = 1
+
+    agora = datetime.now(TZ).isoformat()
+    con.executemany(
+        "INSERT OR REPLACE INTO log_diario (dia, usuario_id, usuario, semana,"
+        " segundos_voz, questoes, acertos, erros, cards, minimo, fechado_em)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        [(dia, p["usuario_id"], p["usuario"], semana, p["segundos_voz"],
+          p["questoes"], p["acertos"], p["erros"], p["cards"], p["minimo"], agora)
+         for p in pessoas.values()])
+    con.commit()
+    return list(pessoas.values())
+
+
+def adesao(con, desde: str, ate: str) -> list:
+    """Quantos dos dias do periodo cada pessoa de fato cumpriu."""
+    return con.execute(
+        "SELECT usuario, usuario_id, COUNT(*) dias_com_log,"
+        " SUM(minimo) dias_com_minimo, SUM(segundos_voz) s"
+        " FROM log_diario WHERE dia BETWEEN ? AND ? GROUP BY usuario_id",
+        (desde, ate)).fetchall()
 
 
 def gravar_snapshot_anki(con, linhas: list[dict]) -> None:
