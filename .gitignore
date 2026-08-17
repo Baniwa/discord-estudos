@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 estudos.db
 estudos.db-*
+anki-*.apkg

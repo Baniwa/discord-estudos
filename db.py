@@ -57,6 +57,25 @@ CREATE TABLE IF NOT EXISTS erros (
     mensagem_id INTEGER UNIQUE
 );
 
+-- Card fica no banco do bot ate ser entregue ao Anki. A fila existe porque o
+-- Anki nao esta sempre aberto (e pode nem estar na mesma maquina do bot). Sem
+-- ela, erro lancado com o Anki fechado se perderia, que e justamente quando a
+-- pessoa mais estuda.
+CREATE TABLE IF NOT EXISTS cards (
+    id           INTEGER PRIMARY KEY,
+    usuario_id   INTEGER NOT NULL,
+    usuario      TEXT    NOT NULL,
+    dia          TEXT    NOT NULL,
+    materia      TEXT    NOT NULL,
+    frente       TEXT    NOT NULL,
+    verso        TEXT    NOT NULL,
+    fonte        TEXT,
+    mensagem_id  INTEGER UNIQUE,
+    entregue_em  TEXT,
+    destino      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_cards_pendente ON cards(entregue_em);
+
 CREATE TABLE IF NOT EXISTS confirmacoes (
     marco_id    TEXT PRIMARY KEY,
     usuario_id  INTEGER,
@@ -157,6 +176,35 @@ def registrar_erro(con, usuario_id, usuario, mensagem_id) -> None:
     con.execute(
         "INSERT OR IGNORE INTO erros (usuario_id, usuario, dia, mensagem_id)"
         " VALUES (?,?,?,?)", (usuario_id, usuario, hoje(), mensagem_id))
+    con.commit()
+
+
+def enfileirar_card(con, usuario_id, usuario, materia, frente, verso,
+                    fonte=None, mensagem_id=None) -> int | None:
+    """Devolve o id do card, ou None se a mensagem ja tinha virado card."""
+    cur = con.execute(
+        "INSERT OR IGNORE INTO cards"
+        " (usuario_id, usuario, dia, materia, frente, verso, fonte, mensagem_id)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        (usuario_id, usuario, hoje(), materia.lower().strip(),
+         frente.strip(), verso.strip(), fonte, mensagem_id))
+    con.commit()
+    return cur.lastrowid if cur.rowcount else None
+
+
+def cards_pendentes(con, materia: str | None = None) -> list:
+    sql = "SELECT * FROM cards WHERE entregue_em IS NULL"
+    args = []
+    if materia:
+        sql += " AND materia=?"
+        args.append(materia.lower().strip())
+    return con.execute(sql + " ORDER BY id", args).fetchall()
+
+
+def marcar_entregue(con, ids: list[int], destino: str) -> None:
+    agora = datetime.now(TZ).isoformat()
+    con.executemany("UPDATE cards SET entregue_em=?, destino=? WHERE id=?",
+                    [(agora, destino, i) for i in ids])
     con.commit()
 
 
