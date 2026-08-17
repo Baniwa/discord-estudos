@@ -42,6 +42,9 @@ ICONE = {
 
 
 def idade(dt: datetime | None) -> str:
+    """Idade legivel. NAO abreviar mes como 'm': 'ha 26m' se le como 26 minutos
+    e inverte completamente o julgamento de vivo/morto, que e o unico proposito
+    deste diagnostico."""
     if dt is None:
         return "vazio"
     dias = (datetime.now(timezone.utc) - dt).days
@@ -50,20 +53,16 @@ def idade(dt: datetime | None) -> str:
     if dias == 1:
         return "ontem"
     if dias < 30:
-        return f"ha {dias}d"
-    return f"ha {dias // 30}m"
+        return f"ha {dias} dias"
+    meses = dias // 30
+    return "ha 1 mes" if meses == 1 else f"ha {meses} meses"
 
 
 class Diagnostico(discord.Client):
     async def on_ready(self):
         try:
-            g = self.get_guild(GUILD_ID)
+            g = credenciais.resolver_guild(self, GUILD_ID)
             if g is None:
-                if GUILD_ID == self.user.id:
-                    print("\nERRO: DISCORD_GUILD_ID esta com a APPLICATION ID do bot.")
-                else:
-                    print(f"\nERRO: o bot nao esta no servidor {GUILD_ID}. "
-                          "Rode  python convite.py")
                 return
 
             await self.panorama(g)
@@ -127,11 +126,18 @@ class Diagnostico(discord.Client):
         print("\n" + "=" * 60)
         print("CARGOS")
         print("=" * 60)
+        # Sem a intent privilegiada de members, r.members vem vazio - imprimir
+        # "0 membro(s)" seria reportar como fato o que e so falta de cache.
+        cacheado = len(g.members) >= (g.member_count or 0)
+        if not cacheado:
+            print("  (contagem por cargo indisponivel: exige a intent "
+                  "privilegiada 'Server Members')")
         for r in sorted(g.roles, key=lambda r: -r.position):
             if r.is_default():
                 continue
-            marca = "ADMIN" if r.permissions.administrator else ""
-            print(f"  {r.name:<24} {len(r.members)} membro(s)  {marca}")
+            marca = " ADMIN" if r.permissions.administrator else ""
+            qtd = f"{len(r.members)} membro(s)" if cacheado else "? membros"
+            print(f"  {r.name:<24} {qtd}{marca}")
 
     async def confronto(self, g: discord.Guild):
         """O que o setup criaria x o que ja existe."""

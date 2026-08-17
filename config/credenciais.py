@@ -49,11 +49,41 @@ def carregar() -> tuple[str, int]:
             "  (Nao e a aba 'General Information'.) Ele aparece uma vez so.\n"
         )
 
-    if not guild.isdigit():
-        sys.exit(
-            "\nDISCORD_GUILD_ID precisa ser so digitos (o ID do servidor).\n"
-            "  Discord > Configuracoes > Avancado > Modo desenvolvedor ligado,\n"
-            "  depois botao direito no nome do servidor > Copiar ID do servidor.\n"
-        )
+    # Guild id e OPCIONAL: se o bot estiver em um servidor so, resolver_guild()
+    # descobre sozinho. Exigir o campo so criava uma chance a mais de colar o
+    # valor errado - foi o que aconteceu duas vezes.
+    return token, int(guild) if guild.isdigit() else 0
 
-    return token, int(guild)
+
+def resolver_guild(client, configurado: int):
+    """Devolve o Guild alvo, ou None com uma explicacao impressa.
+
+    Ordem: usa o configurado se fizer sentido; senao, se o bot estiver em
+    exatamente um servidor, usa esse.
+    """
+    if configurado and configurado != client.user.id:
+        g = client.get_guild(configurado)
+        if g:
+            return g
+        print(f"\nO bot nao esta no servidor {configurado}.")
+        print("  Rode  python convite.py  para gerar o link de autorizacao.")
+        return None
+
+    if configurado == client.user.id:
+        print("\nAviso: DISCORD_GUILD_ID esta com a APPLICATION ID do bot, "
+              "nao com o ID do servidor.")
+
+    if len(client.guilds) == 1:
+        g = client.guilds[0]
+        print(f"Resolvido automaticamente: '{g.name}' ({g.id}).")
+        print(f"Para fixar, ponha no .env:  DISCORD_GUILD_ID={g.id}\n")
+        return g
+
+    if not client.guilds:
+        print("\nO bot nao esta em nenhum servidor. Rode  python convite.py")
+        return None
+
+    print("\nO bot esta em mais de um servidor. Escolha um e ponha no .env:")
+    for g in client.guilds:
+        print(f"  DISCORD_GUILD_ID={g.id}   # {g.name}")
+    return None
