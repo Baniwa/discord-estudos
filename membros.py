@@ -37,11 +37,11 @@ from config import credenciais  # noqa: E402
 
 TOKEN, GUILD_ID = credenciais.carregar()
 
-# Nomes de usuario (sem #tag) que nunca saem. Ajustar antes de rodar --remover.
-ISENTOS = {
-    "baniwa",       # Giulia
-    "gabo",         # ver nota abaixo
-}
+# Nomes de usuario (sem #tag) que nunca saem, ALEM do dono e do bot, que ja
+# sao isentos por codigo. Hoje esta vazio de proposito: a Giulia e a dona do
+# servidor, entao ja esta coberta, e a Larissa ainda nao entrou. Quando ela
+# entrar, o cargo ⚔️ Maidens e o que marca quem fica.
+ISENTOS: set[str] = set()
 
 
 class Membros(discord.Client):
