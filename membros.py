@@ -38,10 +38,11 @@ from config import credenciais  # noqa: E402
 TOKEN, GUILD_ID = credenciais.carregar()
 
 # Nomes de usuario (sem #tag) que nunca saem, ALEM do dono e do bot, que ja
-# sao isentos por codigo. Hoje esta vazio de proposito: a Giulia e a dona do
-# servidor, entao ja esta coberta, e a Larissa ainda nao entrou. Quando ela
-# entrar, o cargo ⚔️ Maidens e o que marca quem fica.
-ISENTOS: set[str] = set()
+# sao isentos por codigo. A Giulia e a dona do servidor, entao ja esta coberta
+# por ali.
+ISENTOS: set[str] = {
+    "lariszm",      # Larissa, entrou em 17/08/2026
+}
 
 
 class Membros(discord.Client):
