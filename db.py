@@ -14,7 +14,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-ARQUIVO = Path(__file__).parent / "estudos.db"
+import os
+
+# Em container o banco mora num volume (DB_PATH), nao ao lado do codigo:
+# recriar o container nao pode apagar o historico de estudo.
+ARQUIVO = Path(os.getenv("DB_PATH") or (Path(__file__).parent / "estudos.db"))
 TZ = ZoneInfo("America/Sao_Paulo")
 
 ESQUEMA = """
