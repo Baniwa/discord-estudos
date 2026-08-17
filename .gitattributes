@@ -1,0 +1,17 @@
+# O projeto e escrito no Windows e roda no Linux. Sem isto, o git grava CRLF
+# nos scripts e o shell do Linux morre com `bad interpreter: /usr/bin/env
+# bash^M` na primeira linha, o que so aparece na VM, no pior momento.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+Dockerfile  text eol=lf
+.env.example text eol=lf
+
+*.apkg      binary
+*.db        binary
+*.png       binary
