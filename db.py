@@ -76,6 +76,32 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 CREATE INDEX IF NOT EXISTS ix_cards_pendente ON cards(entregue_em);
 
+-- Fotografia do Anki. Existe porque o bot pode estar de pe com o Anki fechado
+-- (e vice-versa): o relatorio le daqui, nao do AnkiConnect, entao ele funciona
+-- as 20h de domingo mesmo com o Anki desligado.
+CREATE TABLE IF NOT EXISTS anki_snapshot (
+    dia            TEXT NOT NULL,
+    deck           TEXT NOT NULL,
+    novos          INTEGER,
+    aprender       INTEGER,
+    revisar        INTEGER,
+    revisados_hoje INTEGER,
+    colhido_em     TEXT NOT NULL,
+    PRIMARY KEY (dia, deck)
+);
+
+-- O que ela erra de verdade. Card com muitos lapsos e conceito que nao gruda,
+-- e e o unico sinal do Anki que muda o que estudar na semana seguinte.
+CREATE TABLE IF NOT EXISTS anki_dificeis (
+    card_id     INTEGER PRIMARY KEY,
+    deck        TEXT NOT NULL,
+    frente      TEXT NOT NULL,
+    lapses      INTEGER NOT NULL,
+    facilidade  INTEGER,
+    intervalo   INTEGER,
+    atualizado  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS confirmacoes (
     marco_id    TEXT PRIMARY KEY,
     usuario_id  INTEGER,
@@ -284,6 +310,48 @@ def resumo(con, desde: str, ate: str) -> dict:
 
     return {"voz": voz, "questoes_pessoa": q_pessoa, "questoes_materia": q_materia,
             "minimos": minimos, "erros": erros, "desde": desde, "ate": ate}
+
+
+def gravar_snapshot_anki(con, linhas: list[dict]) -> None:
+    agora = datetime.now(TZ).isoformat()
+    con.executemany(
+        "INSERT OR REPLACE INTO anki_snapshot"
+        " (dia, deck, novos, aprender, revisar, revisados_hoje, colhido_em)"
+        " VALUES (?,?,?,?,?,?,?)",
+        [(hoje(), l["deck"], l["novos"], l["aprender"], l["revisar"],
+          l["revisados_hoje"], agora) for l in linhas])
+    con.commit()
+
+
+def gravar_dificeis(con, cards: list[dict]) -> None:
+    agora = datetime.now(TZ).isoformat()
+    con.executemany(
+        "INSERT OR REPLACE INTO anki_dificeis"
+        " (card_id, deck, frente, lapses, facilidade, intervalo, atualizado)"
+        " VALUES (?,?,?,?,?,?,?)",
+        [(c["card_id"], c["deck"], c["frente"], c["lapses"],
+          c["facilidade"], c["intervalo"], agora) for c in cards])
+    con.commit()
+
+
+def anki_ultimo_snapshot(con) -> list:
+    linha = con.execute("SELECT MAX(dia) d FROM anki_snapshot").fetchone()
+    if not linha or not linha["d"]:
+        return []
+    return con.execute("SELECT * FROM anki_snapshot WHERE dia=? ORDER BY deck",
+                       (linha["d"],)).fetchall()
+
+
+def anki_revisados(con, desde: str, ate: str) -> int:
+    r = con.execute("SELECT SUM(revisados_hoje) n FROM anki_snapshot"
+                    " WHERE dia BETWEEN ? AND ?", (desde, ate)).fetchone()
+    return r["n"] or 0
+
+
+def anki_top_dificeis(con, limite: int = 5) -> list:
+    return con.execute(
+        "SELECT * FROM anki_dificeis WHERE lapses >= 2"
+        " ORDER BY lapses DESC, facilidade ASC LIMIT ?", (limite,)).fetchall()
 
 
 def migrar_estado_json(con, caminho: Path) -> int:

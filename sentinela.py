@@ -36,6 +36,7 @@ load_dotenv()
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+import anki_sync  # noqa: E402
 import db  # noqa: E402
 from config.agenda import MINIMO, bloco_do_dia  # noqa: E402
 
@@ -202,7 +203,33 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
         em.add_field(name="Por matéria (pior primeiro)", value="\n".join(linhas),
                      inline=False)
 
-    # 3. Minimo inegociavel e erros.
+    # 3. Anki. O que ela errou de novo, que e o unico sinal que muda a semana.
+    revisados = db.anki_revisados(con, desde, ate)
+    dificeis = db.anki_top_dificeis(con, 5)
+    snap = db.anki_ultimo_snapshot(con)
+
+    if revisados or dificeis or snap:
+        venc = sum((s["revisar"] or 0) + (s["aprender"] or 0) for s in snap)
+        novos = sum(s["novos"] or 0 for s in snap)
+        cabeca = [f"**{revisados}** revisão(ões) no período",
+                  f"**{venc}** card(s) esperando · {novos} novo(s)"]
+        em.add_field(name="🧠 Anki", value=" · ".join(cabeca), inline=False)
+
+    if dificeis:
+        linhas = []
+        for c in dificeis:
+            deck = c["deck"].split("::")[-1]
+            fac = f" · facilidade {c['facilidade'] / 10:.0f}%" if c["facilidade"] else ""
+            linhas.append(f"🔴 **{c['lapses']}x errado** · `{deck}`{fac}\n"
+                          f"　{c['frente'][:96]}")
+        em.add_field(
+            name="O que não gruda (do Anki)",
+            value="\n".join(linhas) +
+                  "\n\n*Card com muito lapso é conceito para voltar ao bloco de "
+                  "conteúdo, não para revisar mais forte.*",
+            inline=False)
+
+    # 4. Minimo inegociavel e erros.
     rodape = []
     for m in r["minimos"]:
         rodape.append(f"{m['usuario']}: {m['n']}/{dias} dias com o mínimo")
@@ -237,6 +264,7 @@ class Sentinela(discord.Client):
         briefing_diario.start()
         aviso_do_bloco.start()
         relatorio_semanal.start()
+        ler_anki.start()
 
     async def on_ready(self):
         # O sync dos comandos NAO pode ir no setup_hook: la o cache de guilds
@@ -440,6 +468,22 @@ async def aviso_do_bloco():
     await canal.send(content=cargo.mention if cargo else None, embed=em)
 
 
+@tasks.loop(minutes=30)
+async def ler_anki():
+    """Fotografa o Anki quando ele estiver aberto. Silencioso de proposito:
+    Anki fechado e o estado normal, nao um erro que mereca aviso."""
+    import asyncio
+    try:
+        if not await asyncio.to_thread(anki_sync.anki_disponivel):
+            return
+        s = await asyncio.to_thread(anki_sync.coletar_stats, con)
+        if s["dificeis"] or s["revisados_hoje"]:
+            print(f"Anki lido: {s['revisados_hoje']} revisão(ões) hoje, "
+                  f"{s['dificeis']} card(s) difícil(eis).")
+    except Exception as e:
+        print(f"Anki: falha ao ler ({e}). Segue com o último snapshot.")
+
+
 @tasks.loop(time=HORA_RELATORIO)
 async def relatorio_semanal():
     if datetime.now(TZ).weekday() != 6:      # so domingo
@@ -452,6 +496,7 @@ async def relatorio_semanal():
 @briefing_diario.before_loop
 @aviso_do_bloco.before_loop
 @relatorio_semanal.before_loop
+@ler_anki.before_loop
 async def antes():
     await bot.wait_until_ready()
 
@@ -518,20 +563,48 @@ async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta
         f"**F:** {pergunta}\n**V:** {resposta}")
 
 
-@bot.tree.command(name="anki", description="Mostra a fila de cards para o Anki")
+@bot.tree.command(name="anki", description="Estado do Anki: fila, vencidos e o que não gruda")
 async def cmd_anki(i: discord.Interaction):
+    em = discord.Embed(title="Anki", colour=0x5865F2)
+
     pend = db.cards_pendentes(con)
-    if not pend:
-        await i.response.send_message("Fila vazia. Nada esperando o Anki.")
-        return
-    por_materia: dict[str, int] = {}
-    for c in pend:
-        por_materia[c["materia"]] = por_materia.get(c["materia"], 0) + 1
-    linhas = [f"`{m:<18}` {n}" for m, n in
-              sorted(por_materia.items(), key=lambda x: -x[1])]
-    await i.response.send_message(
-        f"**{len(pend)} card(s) na fila**\n" + "\n".join(linhas) +
-        "\n\nRode `python anki_sync.py` para entregar.")
+    if pend:
+        por_materia: dict[str, int] = {}
+        for c in pend:
+            por_materia[c["materia"]] = por_materia.get(c["materia"], 0) + 1
+        em.add_field(
+            name=f"📤 Fila do bot — {len(pend)} card(s)",
+            value="\n".join(f"`{m:<16}` {n}" for m, n in
+                            sorted(por_materia.items(), key=lambda x: -x[1])) +
+                  "\n*Entregues no próximo `anki_sync`, ou sozinho se o Anki estiver aberto.*",
+            inline=False)
+    else:
+        em.add_field(name="📤 Fila do bot", value="Vazia.", inline=False)
+
+    snap = db.anki_ultimo_snapshot(con)
+    if snap:
+        linhas = []
+        for s in snap:
+            deck = s["deck"].split("::")[-1]
+            total = (s["revisar"] or 0) + (s["aprender"] or 0)
+            linhas.append(f"`{deck:<16}` {total} para hoje · {s['novos'] or 0} novo(s)")
+        em.add_field(name=f"📚 Coleção (lida em {snap[0]['dia']})",
+                     value="\n".join(linhas), inline=False)
+    else:
+        em.add_field(name="📚 Coleção",
+                     value="Ainda não li o Anki. Abra o Anki com o AnkiConnect "
+                           "e eu leio em até 30 min.", inline=False)
+
+    dificeis = db.anki_top_dificeis(con, 5)
+    if dificeis:
+        em.add_field(
+            name="🔴 O que não gruda",
+            value="\n".join(
+                f"**{c['lapses']}x** · `{c['deck'].split('::')[-1]}` — "
+                f"{c['frente'][:70]}" for c in dificeis),
+            inline=False)
+
+    await i.response.send_message(embed=em)
 
 
 @bot.tree.command(name="questoes", description="Registra questões feitas")
