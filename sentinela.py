@@ -468,6 +468,17 @@ async def aviso_do_bloco():
     await canal.send(content=cargo.mention if cargo else None, embed=em)
 
 
+def _coletar_anki_isolado() -> dict:
+    """Roda numa thread separada, entao PRECISA da propria conexao: objeto
+    SQLite pertence a thread que o criou. Passar a conexao global daqui
+    levantou ProgrammingError na primeira subida. O WAL cuida da concorrencia."""
+    c = db.conectar()
+    try:
+        return anki_sync.coletar_stats(c)
+    finally:
+        c.close()
+
+
 @tasks.loop(minutes=30)
 async def ler_anki():
     """Fotografa o Anki quando ele estiver aberto. Silencioso de proposito:
@@ -476,7 +487,7 @@ async def ler_anki():
     try:
         if not await asyncio.to_thread(anki_sync.anki_disponivel):
             return
-        s = await asyncio.to_thread(anki_sync.coletar_stats, con)
+        s = await asyncio.to_thread(_coletar_anki_isolado)
         if s["dificeis"] or s["revisados_hoje"]:
             print(f"Anki lido: {s['revisados_hoje']} revisão(ões) hoje, "
                   f"{s['dificeis']} card(s) difícil(eis).")
