@@ -23,12 +23,20 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import credenciais  # noqa: E402
-from config.estrutura import CARGOS, ESTRUTURA, MENSAGEM_ALVO  # noqa: E402
+from config.estrutura import (  # noqa: E402
+    ARQUIVAR, CARGOS, CATEGORIA_ARQUIVO, CATEGORIAS_OBSOLETAS,
+    ESTRUTURA, MENSAGEM_ALVO, REAPROVEITAR,
+)
 
 load_dotenv()
 
 criados: list[str] = []
 existiam: list[str] = []
+
+# Em dry-run as categorias novas nao chegam a existir, entao um "mover para
+# categoria X" ficaria invisivel e o relatorio mentiria por omissao. Este
+# conjunto guarda as que existem OU que seriam criadas nesta passada.
+categorias_previstas: set[str] = set()
 
 
 def log_novo(tipo: str, nome: str) -> None:
@@ -82,6 +90,7 @@ async def garantir_estrutura(guild: discord.Guild, dry: bool) -> None:
         print(f"\n{nome_cat}")
         print(f"  ({bloco['proposito']})")
 
+        categorias_previstas.add(nome_cat)
         categoria = discord.utils.get(guild.categories, name=nome_cat)
         if categoria:
             log_existe("categoria", nome_cat)
@@ -144,6 +153,85 @@ async def sincronizar_tags(forum: discord.ForumChannel, desejadas: list[str]) ->
         log_novo("tag", f"{forum.name} / {t}")
 
 
+async def reaproveitar(guild: discord.Guild, dry: bool) -> None:
+    """Renomeia e remaneja o que ja existia, em vez de criar duplicata."""
+    print("\nREAPROVEITAR (o que ja existia muda de funcao)")
+    for spec in REAPROVEITAR:
+        canal = discord.utils.get(guild.channels, name=spec["de"])
+        if canal is None:
+            print(f"  ? nao encontrado: {spec['de']}  (ja renomeado?)")
+            continue
+
+        novo_nome = spec["para"]
+        destino = None
+        if spec["categoria"]:
+            destino = discord.utils.get(guild.categories, name=spec["categoria"])
+
+        mudancas = []
+        if novo_nome and canal.name != novo_nome:
+            mudancas.append(f"nome -> {novo_nome}")
+        if destino and canal.category_id != destino.id:
+            mudancas.append(f"categoria -> {spec['categoria']}")
+        elif destino is None and spec["categoria"] in categorias_previstas:
+            # dry-run: a categoria ainda nao existe, mas seria criada agora
+            mudancas.append(f"categoria -> {spec['categoria']}")
+
+        if not mudancas:
+            log_existe("ok", spec["de"])
+            continue
+
+        print(f"  ~ {spec['de']:<26} {' · '.join(mudancas)}")
+        print(f"      ({spec['motivo']})")
+        if not dry:
+            kwargs = {"reason": "setup_servidor.py — reconversao"}
+            if novo_nome:
+                kwargs["name"] = novo_nome
+            if destino:
+                kwargs["category"] = destino
+            await canal.edit(**kwargs)
+        criados.append(f"reaproveitado: {spec['de']}")
+
+
+async def arquivar(guild: discord.Guild, dry: bool) -> None:
+    """Move para a categoria de arquivo. Nada e apagado."""
+    print(f"\nARQUIVAR (move para {CATEGORIA_ARQUIVO}, nao apaga)")
+    destino = discord.utils.get(guild.categories, name=CATEGORIA_ARQUIVO)
+
+    if destino is None:
+        if dry:
+            log_novo("categoria", CATEGORIA_ARQUIVO)
+        else:
+            overwrites = {guild.default_role: discord.PermissionOverwrite(
+                send_messages=False, read_message_history=True)}
+            destino = await guild.create_category(
+                CATEGORIA_ARQUIVO, overwrites=overwrites, position=99,
+                reason="setup_servidor.py")
+            log_novo("categoria", CATEGORIA_ARQUIVO)
+
+    for spec in ARQUIVAR:
+        canal = discord.utils.get(guild.channels, name=spec["canal"])
+        if canal is None:
+            print(f"  ? nao encontrado: {spec['canal']}")
+            continue
+        if destino and canal.category_id == destino.id:
+            log_existe("arquivado", spec["canal"])
+            continue
+        print(f"  → {spec['canal']:<26} ({spec['motivo']})")
+        if not dry and destino:
+            await canal.edit(category=destino, reason="setup_servidor.py — arquivo")
+        criados.append(f"arquivado: {spec['canal']}")
+
+
+def categorias_vazias(guild: discord.Guild) -> None:
+    """So relata. Apagar categoria e decisao dela, nao do script."""
+    sobrando = [c for c in guild.categories
+                if c.name in CATEGORIAS_OBSOLETAS and not c.channels]
+    if sobrando:
+        print("\nCATEGORIAS VAZIAS (o script nao apaga - apagar a mao se quiser)")
+        for c in sobrando:
+            print(f"  · {c.name}")
+
+
 async def fixar_alvo(guild: discord.Guild, dry: bool) -> None:
     canal = discord.utils.get(guild.text_channels, name="alvo")
     if not canal or dry:
@@ -164,16 +252,8 @@ async def main(dry: bool) -> None:
     @client.event
     async def on_ready():
         try:
-            guild = client.get_guild(GUILD_ID)
+            guild = credenciais.resolver_guild(client, GUILD_ID)
             if guild is None:
-                if GUILD_ID == client.user.id:
-                    print("\nERRO: DISCORD_GUILD_ID esta com a APPLICATION ID do bot.\n"
-                          "  O ID do servidor nao vem do portal de desenvolvedores.\n"
-                          "  Discord > Configuracoes > Avancado > Modo desenvolvedor,\n"
-                          "  depois botao direito no servidor > Copiar ID do servidor.")
-                else:
-                    print(f"\nERRO: o bot nao esta no servidor {GUILD_ID}.\n"
-                          "  Rode  python convite.py  para gerar o link de autorizacao.")
                 return
 
             print(f"\nServidor: {guild.name}  ({guild.id})")
@@ -182,6 +262,9 @@ async def main(dry: bool) -> None:
 
             await garantir_cargos(guild, dry)
             await garantir_estrutura(guild, dry)
+            await reaproveitar(guild, dry)
+            await arquivar(guild, dry)
+            categorias_vazias(guild)
             await fixar_alvo(guild, dry)
 
             print("\n" + "-" * 52)

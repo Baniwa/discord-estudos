@@ -5,14 +5,20 @@ Editar aqui e rodar de novo e a forma certa de mudar o servidor - o script
 e idempotente, entao nada e duplicado nem apagado.
 """
 
-# Cargos. Servidor de duas pessoas nao precisa de hierarquia -
-# os cargos existem so para mencao e para separar o bot.
-CARGOS = [
-    {"nome": "concurseira", "cor": 0xFEE75C, "hoist": True,
-     "motivo": "Giulia e Larissa. Mencionavel para puxar a outra pro estudo silencioso."},
-    {"nome": "bot", "cor": 0x5865F2, "hoist": False,
-     "motivo": "Sentinela de Prazos."},
-]
+# --------------------------------------------------------------- cargos
+#
+# O servidor ja tinha uma identidade propria (Comand Maidens Dynasty, desde
+# 02/2023) e ela fica. Nenhum cargo novo e criado: ⚔️ Maidens passa a ser o
+# cargo das duas, e os outros dois ficam de pe pensando na hipotese de abrir
+# o servidor para mais gente estudar mais adiante.
+CARGOS_MANTER = ["⚔️ Maidens", "🛡️ Domain", "🧭 Outsider"]
+
+CARGOS = []  # nada a criar
+
+# Nota de desenho, para quando a ideia de abrir o servidor virar plano:
+# a estrutura toda vive neste arquivo como DADO, nao como clique. Isso ja
+# torna o repo um molde - outra pessoa clona, troca marcos.json e roda o
+# setup no servidor dela. Manter assim.
 
 
 # Estrutura de canais.
@@ -21,16 +27,12 @@ CARGOS = [
 #   tags: so para forum
 ESTRUTURA = [
     {
+        # As salas de voz NAO sao criadas: sao as quatro que ja existiam em
+        # VOIP, renomeadas (ver REAPROVEITAR). Criar novas deixaria oito canais
+        # de voz num servidor de duas pessoas.
         "categoria": "🔊 SALA DE ESTUDO",
         "proposito": "O coracao do servidor. Voz e o produto; texto e o arquivo.",
-        "canais": [
-            {"tipo": "voz", "nome": "🔇 Estudo Silencioso",
-             "topico": "Mic e camera OFF. Regra unica: entrou, esta estudando."},
-            {"tipo": "voz", "nome": "🍅 Pomodoro 25-5",
-             "topico": "Ciclo 25 min foco / 5 min pausa."},
-            {"tipo": "voz", "nome": "🗣️ Discussao",
-             "topico": "Mic ON. Para destravar questao, nao para conversar."},
-        ],
+        "canais": [],
     },
     {
         "categoria": "🎯 COMANDO",
@@ -85,6 +87,64 @@ ESTRUTURA = [
         ],
     },
 ]
+
+
+# --------------------------------------------- reconversao do que ja existia
+#
+# Caminho C: o servidor inteiro vira servidor de estudos. Nada e apagado -
+# o que sai de cena vai para uma categoria de arquivo, e continua legivel.
+
+# Canal existente que muda de nome e/ou de categoria.
+#   de: nome exato hoje · para: nome novo (None = manter) · categoria: destino
+REAPROVEITAR = [
+    # As 4 salas de voz de VOIP viram as salas de estudo. Ja existem, tem
+    # historico e ninguem precisa de oito canais de voz.
+    {"de": "🛋 ┇ Salão Comunal", "para": "🔇 Estudo Silencioso",
+     "categoria": "🔊 SALA DE ESTUDO",
+     "motivo": "sala principal - mic e camera off, so presenca"},
+    {"de": "🎶 ┇ Rádio 24/7", "para": "🍅 Pomodoro 25-5",
+     "categoria": "🔊 SALA DE ESTUDO",
+     "motivo": "o bot de radio sai; o espaco vira o ciclo 25/5"},
+    {"de": "🎶 ┇ Música", "para": "🗣️ Discussão",
+     "categoria": "🔊 SALA DE ESTUDO",
+     "motivo": "mic on, para destravar questao"},
+    {"de": "🛋 ┇ English Class", "para": None,
+     "categoria": "🔊 SALA DE ESTUDO",
+     "motivo": "fica como esta - Ingles vale 5% da prova do BB"},
+
+    # Canal de curso que ja era do assunto.
+    {"de": "📊┇analise-de-sistemas", "para": None,
+     "categoria": "📚 CONHECIMENTO",
+     "motivo": "ja e do tema - e o cargo da OTT dela"},
+
+    # Erro de digitacao que estava la desde 2023, no canal vazio.
+    {"de": "┇phyton", "para": "┇python", "categoria": None,
+     "motivo": "grafia errada; canal vazio, entao renomear nao custa nada"},
+]
+
+# Fica exatamente como esta, so muda de dono do proposito.
+MANTER = {
+    "📓 CURSOS": "🇯🇵┇日本語 continua - idioma e treino, nao distracao",
+    "👅 LINGUAGENS": "javascript, html-e-css, python, bash, linux: pratica de dev, "
+                     "distinta da teoria de concurso que vive nos foruns",
+    "☕ CYBER LOUNGE": "bate-papo, memes, img: descompressao. Servidor so de "
+                      "cobranca nao dura",
+    "📌 IMPORTANTE": "rules e boas-vindas ficam de pe pensando na hipotese de "
+                     "abrir o servidor mais adiante",
+}
+
+# Vai para 🗄️ ARQUIVO. NUNCA apagado - historico de 3 anos nao se joga fora.
+ARQUIVAR = [
+    {"canal": "moderator-only", "motivo": "sem categoria, parado ha 26 meses"},
+    {"canal": "┇saída", "motivo": "log do Loritta, parado ha 30 meses; o bot sai"},
+    {"canal": "🌐┇advertisement", "motivo": "vazio, e nao ha o que anunciar"},
+    {"canal": "🤖┇comandos", "motivo": "era dos bots que saem"},
+]
+
+# Categorias que sobram vazias depois do arquivamento.
+CATEGORIAS_OBSOLETAS = ["👑 STAFF", "📝 Registros", "🤖 COMANDOS", "🔊 VOIP"]
+
+CATEGORIA_ARQUIVO = "🗄️ ARQUIVO"
 
 
 # Mensagem fixada em #alvo. Escrita uma vez, travada.
