@@ -1,0 +1,122 @@
+{
+  "_leia_primeiro": [
+    "Regra desta base: marco com 'verificado': true so entra a partir de FONTE PRIMARIA",
+    "(edital em PDF, Diario Oficial, site do orgao ou da banca).",
+    "Infografico de Instagram, noticia e post de professor sao FONTE SECUNDARIA:",
+    "entram com 'verificado': false e o bot NAO faz contagem regressiva em cima deles,",
+    "so lembra de checar a fonte primaria. Isso existe porque o cofre ja registrou",
+    "dois alarmes falsos vindos de fonte secundaria (aprendizado/verificacao-fonte-primaria-editais)."
+  ],
+
+  "timezone": "America/Sao_Paulo",
+
+  "concursos": [
+    {
+      "id": "tcdf-2026",
+      "nome": "TCDF 2026 — Analista Adm. de Controle Externo",
+      "banca": "CEBRASPE",
+      "verificado": true,
+      "fonte": "Edital n. 2/2026 lido na integra em 14/08/2026 (PDF oficial, 50 paginas) — DOE-TCDF ANO I N. 80, 09/07/2026",
+      "prioridade": "ativo",
+      "marcos": [
+        {
+          "id": "tcdf-inscricao-abre",
+          "titulo": "Abertura das inscricoes do TCDF",
+          "quando": "2026-08-26T10:00:00",
+          "acao": "Inscrever E pagar a taxa de R$ 148 no MESMO dia. Nao deixar para 21/09.",
+          "critico": true,
+          "nota": "Inscricao foi adiada 3x na OTT e 4x na EMBRATUR. A janela de 22 dias e o risco, nao a folga."
+        },
+        {
+          "id": "tcdf-inscricao-fecha",
+          "titulo": "ENCERRAMENTO das inscricoes do TCDF (18h)",
+          "quando": "2026-09-17T18:00:00",
+          "acao": "Ultimo instante para se inscrever. Sem inscricao nao ha prova.",
+          "critico": true
+        },
+        {
+          "id": "tcdf-pagamento-limite",
+          "titulo": "Limite para pagamento da taxa do TCDF",
+          "quando": "2026-09-21T23:59:00",
+          "acao": "R$ 148. Sem pagamento nao ha homologacao; sem homologacao nao ha prova.",
+          "critico": true
+        },
+        {
+          "id": "tcdf-foto",
+          "titulo": "Janela de verificacao/reenvio da foto",
+          "quando": "2026-09-18T00:00:00",
+          "acao": "Conferir se a foto foi aceita. Janela 18 a 21/09.",
+          "critico": false
+        },
+        {
+          "id": "tcdf-deferimento",
+          "titulo": "Relacao provisoria de inscricoes deferidas",
+          "quando": "2026-10-09T00:00:00",
+          "acao": "Conferir se a inscricao foi deferida e abrir recurso se nao.",
+          "critico": false
+        },
+        {
+          "id": "tcdf-prova",
+          "titulo": "PROVA do TCDF — objetiva (4h) + discursiva (4h)",
+          "quando": "2026-11-22T08:00:00",
+          "acao": "Brasilia. Domingo.",
+          "critico": true
+        }
+      ]
+    },
+
+    {
+      "id": "bb-agente-tecnologia",
+      "nome": "Banco do Brasil — Agente de Tecnologia",
+      "banca": "a definir (banco recebendo propostas)",
+      "verificado": false,
+      "fonte": "Infografico @PROF.MAXWILLIAM (Instagram) — FONTE SECUNDARIA, sem edital publicado",
+      "prioridade": "degrau-2",
+      "aguardando": "Edital previsto para o 2o semestre de 2026 (nao confirmado em fonte primaria)",
+      "checar_em": "https://www.bb.com.br/site/quem-somos/trabalhe-conosco/",
+      "marcos": []
+    },
+
+    {
+      "id": "anpd-2026",
+      "nome": "ANPD — Especialista em Regulacao de Protecao de Dados",
+      "banca": "a definir",
+      "verificado": false,
+      "fonte": "Infografico @PROF.MAXWILLIAM (Instagram) — FONTE SECUNDARIA, sem edital publicado",
+      "prioridade": "degrau-3",
+      "aguardando": "Concurso autorizado. Edital ate dez/2026 e provas em jan/2027 segundo fonte secundaria — CONFIRMAR no DOU.",
+      "checar_em": "https://www.gov.br/anpd/pt-br",
+      "marcos": []
+    },
+
+    {
+      "id": "bacen",
+      "nome": "Banco Central do Brasil — Tecnico / Auditor / Procurador",
+      "banca": "CEBRASPE no edital anterior (2024); nao confirmada para o novo",
+      "verificado": false,
+      "fonte": "Infografico @PROF.MAXWILLIAM (Instagram) — FONTE SECUNDARIA, sem edital publicado",
+      "prioridade": "degrau-4",
+      "aguardando": "170 vagas autorizadas. ATENCAO: a estrutura de prova divulgada e a do edital de 04/08/2024, para o cargo de ANALISTA. Os cargos do novo concurso sao outros (Tecnico/Auditor/Procurador) — a distribuicao 24/14/17/7 questoes NAO esta garantida.",
+      "checar_em": "https://www.bcb.gov.br/acessoinformacao/concursos",
+      "marcos": []
+    },
+
+    {
+      "id": "sefaz-df",
+      "nome": "SEFAZ-DF — Auditor Fiscal (Tecnologia da Informacao)",
+      "banca": "CEBRASPE (provavel)",
+      "verificado": false,
+      "fonte": "Sem edital desde 24/06/2026. Nota do cofre: concursos/sefaz-df-auditor-ti.md (status: pausado)",
+      "prioridade": "ALVO-REAL",
+      "aguardando": "Edital nunca publicado. Este e o destino da trilha, nao um degrau — a preparacao acontece pelos outros quatro.",
+      "checar_em": "https://www.economia.df.gov.br/",
+      "marcos": []
+    }
+  ],
+
+  "rotina": {
+    "minimo_inegociavel_min": 60,
+    "bloco_diario": "18:00-19:45",
+    "descricao_minimo": "30 min de conteudo + 10 questoes. Reduzir e permitido; pular nao."
+  }
+}
