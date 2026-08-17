@@ -1,0 +1,23 @@
+services:
+  sentinela:
+    build: .
+    container_name: sentinela
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: America/Sao_Paulo
+      DB_PATH: /dados/estudos.db
+    volumes:
+      # Named volume, nao bind mount: o banco sobrevive a `docker compose down`
+      # e a recriacao da imagem.
+      - dados:/dados
+    logging:
+      driver: json-file
+      options:
+        # Sem limite, o log enche o disco de uma VM free tier em algumas
+        # semanas e derruba tudo junto.
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dados:

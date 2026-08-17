@@ -1,41 +1,109 @@
-# Servidor de estudos — trilha SEFAZ Auditor de TI
+# Servidor de estudos
 
-Infraestrutura de um servidor Discord de estudo para duas pessoas (Giulia e Larissa),
-com bot de prazos de edital.
+Estrutura e bot do servidor onde eu e a Larissa estudamos para concurso.
 
-O destino da trilha é **Auditor Fiscal de TI da SEFAZ-DF**. Os quatro concursos
-abaixo são degraus, nesta ordem:
+O destino é **Auditor Fiscal de TI da SEFAZ-DF**. Os quatro concursos abaixo são
+degraus até lá, nesta ordem:
 
 | # | Concurso | Situação |
 |---|---|---|
-| 1 | **TCDF 2026** — Analista Adm. de Controle Externo | edital publicado · prova **22/11/2026** · CEBRASPE |
-| 2 | **BB** — Agente de Tecnologia | sem edital |
-| 3 | **ANPD** — Especialista em Regulação de Proteção de Dados | sem edital |
-| 4 | **BACEN** — Técnico / Auditor / Procurador | sem edital |
+| 1 | **TCDF 2026**, Analista Adm. de Controle Externo | edital publicado, prova em 22/11/2026, CEBRASPE |
+| 2 | **BB**, Agente de Tecnologia | sem edital |
+| 3 | **ANPD**, Especialista em Regulação de Proteção de Dados | sem edital |
+| 4 | **BACEN**, Técnico / Auditor / Procurador | sem edital |
 
-## A decisão que organiza tudo
+## As três decisões que explicam o resto
 
-**Canais por matéria, nunca por concurso.**
+**Canais por matéria, nunca por concurso.** Categoria por concurso morre junto
+com o edital que não sai. Eu já tinha um cronograma inteiro montado em cima do
+concurso da SEFAZ-DF, que nunca foi publicado, e tive que resgatar à mão uns 70%
+do conteúdo quando troquei para o TCDF. Por matéria, os cinco alvos viram filtro
+sobre a mesma base.
 
-Categoria por concurso morre quando o edital não sai, e leva o conhecimento junto —
-foi exatamente o que aconteceu com um cronograma anterior montado em torno de um
-edital da SEFAZ-DF que nunca foi publicado. Por matéria, os cinco alvos viram
-filtros sobre a mesma base, e concurso vira só logística.
+**Voz antes de texto.** O que faz duas pessoas estudarem juntas é estar na mesma
+sala em silêncio, não ter fórum bem organizado. As salas de voz são o centro.
 
-A segunda decisão: **voz é o produto, texto é o arquivo.** O que faz duas pessoas
-estudarem juntas é estar na mesma sala em silêncio, não ter fórum bem organizado.
+**O bot mede, não pergunta.** Relatório feito só de auto-declaração mede
+disciplina de preencher formulário. O que dá para medir sozinho (tempo em call,
+revisão do Anki, card que não gruda) o bot mede.
 
-## Estrutura
+## O que você digita, e o que não
+
+| | Como | Esforço |
+|---|---|---|
+| Tempo estudado | entrar em `🔇 Estudo Silencioso` | **zero** |
+| Revisões do Anki | abrir o Anki e revisar | **zero** |
+| Cards que você mais erra | idem | **zero** |
+| Questões feitas | `/questoes` | ~15 s por dia |
+| Cada erro | `/erro` | ~20 s por erro |
+| Fechou 1h | `/estudei` | 1 clique |
+
+Menos de um minuto de digitação no dia inteiro.
+
+## Comandos
+
+| Comando | O quê |
+|---|---|
+| `/erro materia pergunta resposta` | lança o erro e enfileira o card do Anki |
+| `/questoes materia feitas acertos` | registra o ciclo de questões |
+| `/estudei` | marca o mínimo de 1h do dia e alimenta o streak |
+| `/relatorio periodo` | fecha 7, 14 ou 30 dias |
+| `/anki` | fila do bot, estado da coleção e o que não gruda |
+| `/prazos` | contagem regressiva dos editais |
+| `/agora` | quem está em call de estudo |
+
+## O que o bot faz sozinho
+
+| Quando | O quê |
+|---|---|
+| **07h00** | cobra prazo de edital, com escalada e confirmação por ✅ |
+| **17h45** (seg a sex) | avisa o conteúdo do bloco, 15 min antes |
+| **09h15** (sáb e dom) | idem, no horário do bloco de fim de semana |
+| **22h30** | fecha o log do dia e posta em `#diario` |
+| **domingo 20h** | relatório da semana |
+| **a cada 30 min** | entrega os cards ao Anki e fotografa a coleção |
+| contínuo | cronometra call, conta erro em `#erros-do-dia`, dá boas-vindas |
+
+### O log diário
+
+Todo dia às 22h30 o bot fecha o dia e grava. O log traz tempo em call, questões
+com percentual, erros, cards novos e se o mínimo foi fechado, **ao lado do que o
+calendário mandava estudar naquele dia**.
+
+Dia sem nada registrado sai em vermelho, dizendo o que estava previsto e não
+aconteceu. É isso que permite depois responder "cumpri 9 dos 14 dias da S1", que
+nenhum outro número responde sozinho.
+
+### A regra que vale mais que o resto
+
+**Marco de fonte secundária não recebe contagem regressiva.**
+
+Infográfico de Instagram, notícia e post de professor entram no `marcos.json`
+com `"verificado": false`, e o bot só lembra de conferir a fonte primária. Ele
+não conta dias em cima disso.
+
+Isso está aqui porque eu já levei dois alarmes vermelhos que se revelaram falsos,
+os dois vindos de fonte secundária. Contar dias para uma data que ninguém publicou
+é fabricar urgência, e urgência fabricada estraga a confiança no bot inteiro.
+
+## Estrutura do servidor
 
 ```
-🔊 SALA DE ESTUDO     🔇 Estudo Silencioso · 🍅 Pomodoro 25-5 · 🗣️ Discussão
-🎯 COMANDO            #alvo · #metas-do-dia · #diario · #erros-do-dia · #simulados
-📚 CONHECIMENTO       #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas   (fóruns com tags)
-📋 LOGÍSTICA          #editais-e-prazos · #biblioteca · #marcos
+🔊 SALA DE ESTUDO    Estudo Silencioso · Pomodoro 25-5 · Discussão · English Class
+🎯 COMANDO           #alvo · #calendario · #metas-do-dia · #diario · #erros-do-dia · #simulados
+📚 CONHECIMENTO      #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas (fóruns)
+📋 LOGÍSTICA         #editais-e-prazos · #biblioteca · #marcos
+👅 LINGUAGENS        javascript · html-e-css · python · bash · linux
+☕ CYBER LOUNGE      bate-papo · memes · img
+🗄️ ARQUIVO           o que saiu de cena, em somente leitura
 ```
 
-`#erros-do-dia` é o canal mais importante: todo item errado entra ali e vira card
-no Anki. Dia sem mensagem nele é dia que não aconteceu.
+`#erros-do-dia` é o mais importante. Dia sem mensagem nele é dia que não
+aconteceu.
+
+O servidor existia desde fevereiro de 2023 com outra função, então o setup
+reconverte em vez de criar do zero. As salas de voz antigas viraram as de estudo
+por renomeação. Nada foi apagado: o que saiu de cena foi para `🗄️ ARQUIVO`.
 
 ## Instalação
 
@@ -44,61 +112,84 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Preencher o `.env`:
+No `.env` só o token é obrigatório. `DISCORD_GUILD_ID` é opcional: com o bot em
+um servidor só, os scripts descobrem sozinhos.
 
-- **`DISCORD_BOT_TOKEN`** — `discord.com/developers/applications` › New Application ›
-  Bot › Reset Token. Aparece uma vez só.
-- **`DISCORD_GUILD_ID`** — no Discord, ligar Configurações › Avançado › Modo
-  desenvolvedor, depois botão direito no servidor › Copiar ID.
+O token fica em discord.com/developers/applications, aba **Bot** (não em General
+Information), botão Reset Token. Ligue também a intent privilegiada
+**SERVER MEMBERS** e, se quiser que mensagem solta em `#erros-do-dia` vire card,
+**MESSAGE CONTENT**.
 
-Convidar o bot no servidor com permissão de **Administrador** (OAuth2 › URL
-Generator › escopos `bot` + `applications.commands`).
+Convide o bot pelo link que o `convite.py` gera. Ele precisa de Administrador, e
+o cargo dele tem que ficar **acima** dos cargos que ele vai gerenciar, senão
+expulsar membro e atribuir cargo falham por hierarquia.
 
-## Uso
+## Scripts
 
 ```bash
-python setup_servidor.py --dry-run   # mostra o que seria criado, sem tocar em nada
-python setup_servidor.py             # cria categorias, canais, fóruns, tags e cargos
-python sentinela.py                  # sobe o bot de prazos
+python convite.py                    # link de convite do bot
+python diagnostico.py                # inventário do servidor, só leitura
+python setup_servidor.py --dry-run   # mostra o que faria, sem tocar em nada
+python setup_servidor.py             # cria e reconverte a estrutura
+python semear_foruns.py              # reação padrão e post inicial dos fóruns
+python publicar.py                   # regras e calendário
+python membros.py                    # lista membros (--remover para aplicar)
+python limpar.py                     # apaga o que não serve, em 3 faixas
+python anki_sync.py                  # entrega cards e lê estatística
+python sentinela.py                  # sobe o bot
 ```
 
-`setup_servidor.py` é **idempotente**: cria só o que falta, nunca apaga nem duplica.
-Para mudar o servidor, edite `config/estrutura.py` e rode de novo.
+Rode sempre o `--dry-run` antes. `setup_servidor.py` é idempotente: cria só o
+que falta, não duplica e não apaga.
 
-## O bot
+## Anki
 
-Posta em `#editais-e-prazos` às **07h (BRT)**, com escalada por urgência
-(🟢 acima de 15 dias · 🟡 até 15 · 🔴 até 3, ou até 7 se o marco for crítico).
+`/erro` põe o card numa fila no banco. O bot entrega ao Anki a cada 30 minutos,
+quando o Anki estiver aberto, e avisa em `#erros-do-dia` quando entregou.
 
-**Confirmação por reação:** você marca ✅ e ele para de cobrar. Sem reação, ele
-assume que não foi feito e cobra de novo no dia seguinte.
+A fila existe porque o Anki não fica sempre aberto, e pode nem estar na mesma
+máquina do bot. Card só sai da fila quando a entrega deu certo, então Anki
+fechado não perde nada.
 
-Dia sem nada a cobrar não gera post — exceto segunda-feira, para o panorama semanal.
+Sem AnkiConnect, o `anki_sync.py` gera um `.apkg` para importar à mão.
 
-Comandos: `/prazos` · `/estudei` (streak do mínimo de 1h) · `/questoes`.
+O tipo de nota é descoberto na coleção, não chumbado: numa instalação em
+português ele chama `Básico`, com campos `Frente` e `Verso`.
 
-### A regra que vale mais que o resto
-
-Marco de **fonte secundária não recebe contagem regressiva.** Infográfico de
-Instagram, notícia e post de professor entram em `config/marcos.json` com
-`"verificado": false` e o bot só lembra de conferir a fonte primária — não conta
-dias em cima deles.
-
-Isso existe porque dois alarmes 🔴 anteriores se revelaram falsos por virem de
-fonte secundária. Contar dias para uma data que ninguém publicou é fabricar
-urgência, e urgência fabricada destrói a confiança no bot inteiro.
-
-Só entra com `"verificado": true` o que vier de edital em PDF, Diário Oficial,
-site do órgão ou da banca.
+Decks: `TCDF::Administrativo`, `::AFO`, `::Lei local`, `::Específicos`,
+`::Português`. Matéria que não casa cai em Específicos, em vez de criar deck novo
+a cada digitação diferente.
 
 ## Arquivos
 
 | Arquivo | O quê |
 |---|---|
-| `config/estrutura.py` | categorias, canais, fóruns, tags, cargos e a mensagem fixada de `#alvo` |
-| `config/marcos.json` | concursos e datas, com marcação de fonte primária/secundária |
-| `setup_servidor.py` | cria a estrutura no Discord |
-| `sentinela.py` | bot de prazos, streak e questões |
-| `estado.json` | gerado em runtime — confirmações e streak (fora do git) |
+| `config/estrutura.py` | categorias, canais, fóruns, tags e o plano de reconversão |
+| `config/agenda.py` | as 14 semanas do plano de 100 dias |
+| `config/marcos.json` | concursos e datas, marcando fonte primária ou secundária |
+| `config/credenciais.py` | valida token e guild id, e diz qual campo do portal foi colado errado |
+| `db.py` | SQLite: sessões, questões, erros, cards, log diário, snapshot do Anki |
+| `sentinela.py` | o bot |
+| `anki_sync.py` | entrega de cards e leitura da coleção |
+| `estudos.db` | gerado em runtime, fora do git |
 
-`.env` e `estado.json` estão no `.gitignore`.
+`.env`, `estudos.db` e `*.apkg` estão no `.gitignore`.
+
+## Branches
+
+Gitflow. `main` é o que está rodando, `develop` é a integração, e cada mudança
+nasce em `feature/<nome>` a partir de `develop`.
+
+```bash
+git checkout develop
+git checkout -b feature/minha-mudanca
+git push -u origin feature/minha-mudanca
+```
+
+Merge para `develop` via PR, com `--no-ff`. Direto na `main` só release.
+
+## Se você quiser montar o seu
+
+A estrutura toda vive em `config/`, como dado. Clona o repo, troca o
+`marcos.json` pelos seus concursos, ajusta `estrutura.py` e `agenda.py`, e roda o
+setup no seu servidor. Não precisa mexer no código.
