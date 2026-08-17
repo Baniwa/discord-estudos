@@ -284,13 +284,32 @@ async def on_voice_state_update(membro, antes, depois):
 
 @bot.event
 async def on_message(msg: discord.Message):
-    """Conta erro lancado. Nao le o texto - so o fato de existir a mensagem,
-    o que dispensa a intent privilegiada de message_content."""
+    """Erro lancado em #erros-do-dia.
+
+    Sem a intent message_content, `msg.content` vem VAZIO: da para contar que
+    houve um erro, mas nao para montar o card. Entao:
+      - com a intent ligada, a convencao `pergunta :: resposta` vira card;
+      - sem ela, conta o erro e avisa que o card so sai pelo /erro.
+    """
     if msg.author.bot or not msg.guild:
         return
-    if getattr(msg.channel, "name", None) == CANAL_ERROS:
-        db.registrar_erro(con, msg.author.id, msg.author.display_name, msg.id)
-        await msg.add_reaction("📗")     # virou card no Anki
+    if getattr(msg.channel, "name", None) != CANAL_ERROS:
+        return
+
+    db.registrar_erro(con, msg.author.id, msg.author.display_name, msg.id)
+
+    texto = (msg.content or "").strip()
+    if "::" in texto:
+        frente, verso = texto.split("::", 1)
+        materia = "geral"
+        if frente.startswith("[") and "]" in frente:
+            materia, frente = frente[1:].split("]", 1)
+        db.enfileirar_card(con, msg.author.id, msg.author.display_name,
+                           materia, frente, verso, fonte="#erros-do-dia",
+                           mensagem_id=msg.id)
+        await msg.add_reaction("📗")     # virou card
+    else:
+        await msg.add_reaction("📝")     # contado, mas nao virou card
 
 
 @bot.event
@@ -401,6 +420,36 @@ async def cmd_estudei(i: discord.Interaction):
         f"{marca} **{i.user.display_name}** fechou o mínimo. "
         f"Streak: **{atual}** dia(s) · recorde {recorde}.\n"
         f"*{CONFIG['rotina']['descricao_minimo']}*")
+
+
+@bot.tree.command(name="erro", description="Lança um erro e já vira card do Anki")
+@app_commands.describe(materia="Matéria", pergunta="A frente do card",
+                       resposta="O verso: o que é certo, e por quê")
+async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta: str):
+    card_id = db.enfileirar_card(con, i.user.id, i.user.display_name,
+                                 materia, pergunta, resposta, fonte="/erro")
+    pend = len(db.cards_pendentes(con))
+    db.registrar_erro(con, i.user.id, i.user.display_name, card_id or 0)
+
+    await i.response.send_message(
+        f"📗 **{materia}** — card na fila do Anki *(#{card_id}, {pend} pendente(s))*\n"
+        f"**F:** {pergunta}\n**V:** {resposta}")
+
+
+@bot.tree.command(name="anki", description="Mostra a fila de cards para o Anki")
+async def cmd_anki(i: discord.Interaction):
+    pend = db.cards_pendentes(con)
+    if not pend:
+        await i.response.send_message("Fila vazia. Nada esperando o Anki.")
+        return
+    por_materia: dict[str, int] = {}
+    for c in pend:
+        por_materia[c["materia"]] = por_materia.get(c["materia"], 0) + 1
+    linhas = [f"`{m:<18}` {n}" for m, n in
+              sorted(por_materia.items(), key=lambda x: -x[1])]
+    await i.response.send_message(
+        f"**{len(pend)} card(s) na fila**\n" + "\n".join(linhas) +
+        "\n\nRode `python anki_sync.py` para entregar.")
 
 
 @bot.tree.command(name="questoes", description="Registra questões feitas")
