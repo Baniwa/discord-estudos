@@ -71,16 +71,42 @@ def anki_disponivel() -> bool:
         return False
 
 
+def modelo_basico() -> tuple[str, str, str]:
+    """(modelo, campo_frente, campo_verso), descobertos na coleção.
+
+    Não dá para chumbar "Basic"/"Front"/"Back": numa instalação em português o
+    tipo de nota chama "Básico" com campos "Frente" e "Verso", e o addNote
+    falha com `model was not found`. Foi o que aconteceu no primeiro teste.
+    """
+    nomes = anki("modelNames")
+    preferidos = ["Básico", "Basic", "Basico"]
+    escolhido = next((p for p in preferidos if p in nomes), None)
+
+    if escolhido is None:  # último recurso: o primeiro com exatamente 2 campos
+        for n in nomes:
+            if len(anki("modelFieldNames", modelName=n)) == 2:
+                escolhido = n
+                break
+    if escolhido is None:
+        raise RuntimeError(f"nenhum tipo de nota de 2 campos na coleção: {nomes}")
+
+    campos = anki("modelFieldNames", modelName=escolhido)
+    return escolhido, campos[0], campos[1]
+
+
 def enviar_por_ankiconnect(con, pendentes) -> int:
     for deck in {deck_de(c["materia"]) for c in pendentes}:
         anki("createDeck", deck=deck)
+
+    modelo, campo_frente, campo_verso = modelo_basico()
+    print(f"  (tipo de nota: {modelo} · campos {campo_frente}/{campo_verso})")
 
     enviados = []
     for c in pendentes:
         nota = {
             "deckName": deck_de(c["materia"]),
-            "modelName": "Basic",
-            "fields": {"Front": c["frente"], "Back": c["verso"]},
+            "modelName": modelo,
+            "fields": {campo_frente: c["frente"], campo_verso: c["verso"]},
             "tags": ["discord", c["materia"], c["usuario"]],
             "options": {"allowDuplicate": False,
                         "duplicateScope": "deck"},
@@ -102,6 +128,62 @@ def enviar_por_ankiconnect(con, pendentes) -> int:
     if enviados:
         db.marcar_entregue(con, enviados, "ankiconnect")
     return len(enviados)
+
+
+# ------------------------------------------------------------- estatística
+
+def limpar_html(texto: str) -> str:
+    """A frente do card vem com HTML do editor do Anki."""
+    import html
+    import re
+    return html.unescape(re.sub(r"<[^>]+>", " ", texto)).strip()
+
+
+def coletar_stats(con) -> dict:
+    """Traz do Anki o que o bot não consegue saber sozinho: o que ela revisou
+    e, principalmente, o que ela erra de novo e de novo.
+
+    O número que muda decisão é `lapses`. Card com muito lapso é conceito que
+    não gruda, e é o único sinal do Anki que diz o que estudar na semana
+    seguinte. Acerto alto não muda nada.
+    """
+    decks = [d for d in anki("deckNames") if d.startswith(BARALHO_RAIZ)]
+    if not decks:
+        return {"decks": 0, "dificeis": 0, "revisados_hoje": 0}
+
+    stats = anki("getDeckStats", decks=decks)
+    revisados = anki("getNumCardsReviewedToday")
+
+    linhas = []
+    for info in stats.values():
+        linhas.append({
+            "deck": info.get("name", "?"),
+            "novos": info.get("new_count", 0),
+            "aprender": info.get("learn_count", 0),
+            "revisar": info.get("review_count", 0),
+            # revisados_hoje é da coleção toda, não por deck. Fica no primeiro
+            # deck para a soma do período não multiplicar pelo nº de decks.
+            "revisados_hoje": 0,
+        })
+    if linhas:
+        linhas[0]["revisados_hoje"] = revisados
+    db.gravar_snapshot_anki(con, linhas)
+
+    ids = anki("findCards", query=f"deck:{BARALHO_RAIZ} prop:lapses>=2")
+    dificeis = []
+    if ids:
+        for c in anki("cardsInfo", cards=ids):
+            frente = next(iter(c.get("fields", {}).values()), {}).get("value", "")
+            dificeis.append({
+                "card_id": c["cardId"], "deck": c["deckName"],
+                "frente": limpar_html(frente)[:180],
+                "lapses": c["lapses"], "facilidade": c["factor"],
+                "intervalo": c["interval"],
+            })
+        db.gravar_dificeis(con, dificeis)
+
+    return {"decks": len(linhas), "dificeis": len(dificeis),
+            "revisados_hoje": revisados}
 
 
 # ------------------------------------------------------------------ .apkg
@@ -146,6 +228,13 @@ def main():
 
     con = db.conectar()
     pendentes = db.cards_pendentes(con)
+
+    # A coleta roda sempre que o Anki estiver aberto, mesmo sem card na fila:
+    # é o que mantém o relatório com dado fresco quando o Anki fecha.
+    if not args.apkg and anki_disponivel():
+        s = coletar_stats(con)
+        print(f"Anki lido: {s['decks']} deck(s) · {s['revisados_hoje']} revisão(ões) "
+              f"hoje · {s['dificeis']} card(s) difícil(eis).")
 
     if args.status or not pendentes:
         print(f"\nFila: {len(pendentes)} card(s) pendente(s).")
