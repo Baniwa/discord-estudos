@@ -234,18 +234,29 @@ class Sentinela(discord.Client):
         if orfas:
             print(f"{orfas} sessão(ões) de voz órfã(s) fechada(s).")
         db.migrar_estado_json(con, RAIZ / "estado.json")
-
-        if GUILD_ID:
-            g = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=g)
-            await self.tree.sync(guild=g)
         briefing_diario.start()
         aviso_do_bloco.start()
         relatorio_semanal.start()
 
     async def on_ready(self):
+        # O sync dos comandos NAO pode ir no setup_hook: la o cache de guilds
+        # ainda esta vazio, e usar o GUILD_ID cru quebra se o .env estiver com
+        # a application id. Aqui a guild ja esta resolvida de verdade.
+        global GUILD_ID
+        g = guild_alvo(self)
+        if g is None:
+            print("Bot nao esta em nenhum servidor. Rode convite.py.")
+            return
+        GUILD_ID = g.id
+
+        if not getattr(self, "_comandos_sincronizados", False):
+            alvo = discord.Object(id=g.id)
+            self.tree.copy_global_to(guild=alvo)
+            await self.tree.sync(guild=alvo)
+            self._comandos_sincronizados = True
+            print(f"Comandos sincronizados em {g.name}.")
+
         # Quem ja estava em call quando o bot subiu tambem conta.
-        g = self.get_guild(GUILD_ID) or (self.guilds[0] if self.guilds else None)
         if g:
             for canal in g.voice_channels:
                 if canal.category and canal.category.name == CATEGORIA_ESTUDO:
@@ -255,11 +266,21 @@ class Sentinela(discord.Client):
         print(f"Sentinela no ar como {self.user}.")
 
 
+def guild_alvo(cliente: discord.Client):
+    """A guild em que o bot opera. Aceita GUILD_ID vazio ou errado: com o bot
+    em um servidor so, nao ha ambiguidade."""
+    if GUILD_ID and GUILD_ID != cliente.user.id:
+        g = cliente.get_guild(GUILD_ID)
+        if g:
+            return g
+    return cliente.guilds[0] if cliente.guilds else None
+
+
 bot = Sentinela()
 
 
 def canal_por_nome(nome: str):
-    g = bot.get_guild(GUILD_ID) or (bot.guilds[0] if bot.guilds else None)
+    g = guild_alvo(bot)
     return discord.utils.get(g.text_channels, name=nome) if g else None
 
 
