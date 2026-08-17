@@ -3,3 +3,5 @@ estado.json
 __pycache__/
 *.pyc
 .venv/
+estudos.db
+estudos.db-*
