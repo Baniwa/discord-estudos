@@ -37,6 +37,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import db  # noqa: E402
+from config.agenda import MINIMO, bloco_do_dia  # noqa: E402
 
 CONFIG = json.loads((RAIZ / "config" / "marcos.json").read_text(encoding="utf-8"))
 TZ = ZoneInfo(CONFIG["timezone"])
@@ -46,7 +47,11 @@ CANAL_ERROS = "erros-do-dia"
 CATEGORIA_ESTUDO = "🔊 SALA DE ESTUDO"
 CARGO_ALVO = "⚔️ Maidens"
 
+CANAL_BOAS_VINDAS = "🤙🏽┇boas-vindas"
+CANAL_METAS = "metas-do-dia"
+
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
+HORA_BLOCO = time(hour=17, minute=45, tzinfo=TZ)       # 15 min antes do bloco
 HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)   # domingo
 
 DATA_PROVA = datetime(2026, 11, 22, tzinfo=TZ)
@@ -220,6 +225,7 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
 class Sentinela(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()   # ja inclui voice_states e reactions
+        intents.members = True                # privilegiada: para dar boas-vindas
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
@@ -234,6 +240,7 @@ class Sentinela(discord.Client):
             self.tree.copy_global_to(guild=g)
             await self.tree.sync(guild=g)
         briefing_diario.start()
+        aviso_do_bloco.start()
         relatorio_semanal.start()
 
     async def on_ready(self):
@@ -261,6 +268,37 @@ def e_canal_de_estudo(canal) -> bool:
 
 
 # ------------------------------------------------------------------ eventos
+
+@bot.event
+async def on_member_join(membro: discord.Member):
+    """Boas-vindas. Curto de proposito: as tres coisas que a pessoa precisa
+    fazer, e nao um tour pelos 15 canais."""
+    if membro.bot:
+        return
+    canal = canal_por_nome(CANAL_BOAS_VINDAS)
+    if canal is None:
+        return
+
+    faltam = (DATA_PROVA.date() - datetime.now(TZ).date()).days
+    regras = canal_por_nome("📕┇rules")
+    metas = canal_por_nome(CANAL_METAS)
+    erros = canal_por_nome(CANAL_ERROS)
+    sala = discord.utils.get(canal.guild.voice_channels, name="🔇 Estudo Silencioso")
+
+    await canal.send(
+        f"Chegou {membro.mention}. Bem-vinda.\n\n"
+        f"Aqui não tem tour. São três coisas:\n\n"
+        f"**1.** Antes de estudar, uma linha em "
+        f"{metas.mention if metas else '#metas-do-dia'}. O que você vai fazer hoje.\n"
+        f"**2.** Entra em {sala.mention if sala else '🔇 Estudo Silencioso'}. "
+        f"Mic e câmera off, ninguém fala. Eu cronometro sozinho.\n"
+        f"**3.** Todo erro vai para {erros.mention if erros else '#erros-do-dia'}, "
+        f"na hora. É o canal que vira card no Anki, e o único cuja ausência "
+        f"significa que o dia não aconteceu.\n\n"
+        f"O resto está em {regras.mention if regras else '#rules'}. "
+        f"Use `/estudei` quando fechar o mínimo de 1h.\n\n"
+        f"**Faltam {faltam} dias para a prova do TCDF.**")
+
 
 @bot.event
 async def on_voice_state_update(membro, antes, depois):
@@ -359,6 +397,28 @@ async def briefing_diario():
             db.vincular_mensagem(con, msg.id, m["id"])
 
 
+@tasks.loop(time=HORA_BLOCO)
+async def aviso_do_bloco():
+    """15 min antes do bloco, diz o que estudar hoje. Sem isto, o comeco do
+    bloco vira decisao, e decisao no fim do dia e onde o plano se perde."""
+    canal = canal_por_nome(CANAL_METAS)
+    if canal is None:
+        return
+    hoje = datetime.now(TZ).date()
+    b = bloco_do_dia(hoje)
+
+    em = discord.Embed(
+        title=f"Bloco de hoje — {b['hora']}",
+        description=f"**{b['rotulo']}**\n{b['conteudo']}",
+        colour=0xFEE75C)
+    em.add_field(name="Estrutura", value=b["estrutura"], inline=False)
+    em.set_footer(text=f"{MINIMO}  ·  prova em "
+                       f"{(DATA_PROVA.date() - hoje).days} dias")
+
+    cargo = discord.utils.get(canal.guild.roles, name=CARGO_ALVO)
+    await canal.send(content=cargo.mention if cargo else None, embed=em)
+
+
 @tasks.loop(time=HORA_RELATORIO)
 async def relatorio_semanal():
     if datetime.now(TZ).weekday() != 6:      # so domingo
@@ -369,6 +429,7 @@ async def relatorio_semanal():
 
 
 @briefing_diario.before_loop
+@aviso_do_bloco.before_loop
 @relatorio_semanal.before_loop
 async def antes():
     await bot.wait_until_ready()
