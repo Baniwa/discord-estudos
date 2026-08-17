@@ -1,41 +1,49 @@
-# Servidor de estudos — trilha SEFAZ Auditor de TI
+# Servidor de estudos
 
-Infraestrutura de um servidor Discord de estudo para duas pessoas (Giulia e Larissa),
-com bot de prazos de edital.
+Estrutura e bot de prazos do servidor onde eu e a Larissa estudamos para concurso.
 
-O destino da trilha é **Auditor Fiscal de TI da SEFAZ-DF**. Os quatro concursos
-abaixo são degraus, nesta ordem:
+O destino é **Auditor Fiscal de TI da SEFAZ-DF**. Os quatro concursos abaixo são
+degraus até lá, nesta ordem:
 
 | # | Concurso | Situação |
 |---|---|---|
-| 1 | **TCDF 2026** — Analista Adm. de Controle Externo | edital publicado · prova **22/11/2026** · CEBRASPE |
-| 2 | **BB** — Agente de Tecnologia | sem edital |
-| 3 | **ANPD** — Especialista em Regulação de Proteção de Dados | sem edital |
-| 4 | **BACEN** — Técnico / Auditor / Procurador | sem edital |
+| 1 | **TCDF 2026**, Analista Adm. de Controle Externo | edital publicado, prova em 22/11/2026, CEBRASPE |
+| 2 | **BB**, Agente de Tecnologia | sem edital |
+| 3 | **ANPD**, Especialista em Regulação de Proteção de Dados | sem edital |
+| 4 | **BACEN**, Técnico / Auditor / Procurador | sem edital |
 
-## A decisão que organiza tudo
+## Por que os canais são por matéria
 
-**Canais por matéria, nunca por concurso.**
+Porque categoria por concurso morre junto com o edital que não sai.
 
-Categoria por concurso morre quando o edital não sai, e leva o conhecimento junto —
-foi exatamente o que aconteceu com um cronograma anterior montado em torno de um
-edital da SEFAZ-DF que nunca foi publicado. Por matéria, os cinco alvos viram
-filtros sobre a mesma base, e concurso vira só logística.
+Eu já tinha um cronograma inteiro montado em cima do concurso da SEFAZ-DF, que
+nunca foi publicado. Quando troquei o alvo para o TCDF, tive que resgatar à mão
+uns 70% do conteúdo, que era o mesmo. Organizando por matéria isso não acontece:
+os cinco alvos viram filtro sobre a mesma base, e concurso vira só logística.
 
-A segunda decisão: **voz é o produto, texto é o arquivo.** O que faz duas pessoas
+A segunda decisão é que **voz vem antes de texto**. O que faz duas pessoas
 estudarem juntas é estar na mesma sala em silêncio, não ter fórum bem organizado.
+Por isso as salas de voz são o centro do servidor.
 
 ## Estrutura
 
 ```
-🔊 SALA DE ESTUDO     🔇 Estudo Silencioso · 🍅 Pomodoro 25-5 · 🗣️ Discussão
-🎯 COMANDO            #alvo · #metas-do-dia · #diario · #erros-do-dia · #simulados
-📚 CONHECIMENTO       #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas   (fóruns com tags)
-📋 LOGÍSTICA          #editais-e-prazos · #biblioteca · #marcos
+🔊 SALA DE ESTUDO    Estudo Silencioso · Pomodoro 25-5 · Discussão · English Class
+🎯 COMANDO           #alvo · #metas-do-dia · #diario · #erros-do-dia · #simulados
+📚 CONHECIMENTO      #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas (fóruns)
+📋 LOGÍSTICA         #editais-e-prazos · #biblioteca · #marcos
+👅 LINGUAGENS        javascript · html-e-css · python · bash · linux
+☕ CYBER LOUNGE      bate-papo · memes · img
+🗄️ ARQUIVO           o que saiu de cena, em somente leitura
 ```
 
-`#erros-do-dia` é o canal mais importante: todo item errado entra ali e vira card
-no Anki. Dia sem mensagem nele é dia que não aconteceu.
+`#erros-do-dia` é o canal mais importante. Todo item que eu errar entra ali e
+vira card no Anki. Dia sem mensagem nele é dia que não aconteceu.
+
+O servidor já existia desde fevereiro de 2023 com outra função, então o setup
+reconverte em vez de criar do zero. As salas de voz antigas viraram as salas de
+estudo por renomeação, e o `analise-de-sistemas` continuou onde estava porque já
+era do tema. Nada foi apagado: o que saiu de cena foi para `🗄️ ARQUIVO`.
 
 ## Instalação
 
@@ -44,49 +52,54 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Preencher o `.env`:
+No `.env` só o token é obrigatório:
 
-- **`DISCORD_BOT_TOKEN`** — `discord.com/developers/applications` › New Application ›
-  Bot › Reset Token. Aparece uma vez só.
-- **`DISCORD_GUILD_ID`** — no Discord, ligar Configurações › Avançado › Modo
-  desenvolvedor, depois botão direito no servidor › Copiar ID.
+* `DISCORD_BOT_TOKEN` fica em discord.com/developers/applications, aba **Bot**
+  (não em General Information), botão Reset Token. Aparece uma vez só.
+* `DISCORD_GUILD_ID` é opcional. Se o bot estiver em um servidor só, os scripts
+  descobrem sozinhos.
 
-Convidar o bot no servidor com permissão de **Administrador** (OAuth2 › URL
-Generator › escopos `bot` + `applications.commands`).
+Convide o bot pelo link que o `convite.py` gera. Ele precisa de Administrador.
 
-## Uso
+## Comandos
 
 ```bash
-python setup_servidor.py --dry-run   # mostra o que seria criado, sem tocar em nada
-python setup_servidor.py             # cria categorias, canais, fóruns, tags e cargos
+python convite.py                    # gera o link de convite do bot
+python diagnostico.py                # inventário do servidor, só leitura
+python setup_servidor.py --dry-run   # mostra o que faria, sem tocar em nada
+python setup_servidor.py             # aplica
+python membros.py                    # lista membros
 python sentinela.py                  # sobe o bot de prazos
 ```
 
-`setup_servidor.py` é **idempotente**: cria só o que falta, nunca apaga nem duplica.
+`setup_servidor.py` é idempotente. Cria só o que falta, não duplica e não apaga.
 Para mudar o servidor, edite `config/estrutura.py` e rode de novo.
 
-## O bot
+Sempre rode o `--dry-run` antes. Ele mostra o que seria criado, o que seria
+renomeado e o que iria para o arquivo.
 
-Posta em `#editais-e-prazos` às **07h (BRT)**, com escalada por urgência
-(🟢 acima de 15 dias · 🟡 até 15 · 🔴 até 3, ou até 7 se o marco for crítico).
+## O bot de prazos
 
-**Confirmação por reação:** você marca ✅ e ele para de cobrar. Sem reação, ele
-assume que não foi feito e cobra de novo no dia seguinte.
+Posta em `#editais-e-prazos` às 7h, com escalada por urgência: verde acima de 15
+dias, amarelo até 15, vermelho até 3 (ou até 7 se o marco for crítico).
 
-Dia sem nada a cobrar não gera post — exceto segunda-feira, para o panorama semanal.
+Você marca ✅ na mensagem e ele para de cobrar. Sem a reação ele assume que não
+foi feito e cobra de novo no dia seguinte. Dia sem nada a cobrar não gera post,
+tirando segunda-feira, que traz o panorama da semana.
 
-Comandos: `/prazos` · `/estudei` (streak do mínimo de 1h) · `/questoes`.
+Comandos: `/prazos`, `/estudei` (streak do mínimo de 1h) e `/questoes`.
 
-### A regra que vale mais que o resto
+### A regra que importa mais que o resto
 
-Marco de **fonte secundária não recebe contagem regressiva.** Infográfico de
-Instagram, notícia e post de professor entram em `config/marcos.json` com
-`"verificado": false` e o bot só lembra de conferir a fonte primária — não conta
-dias em cima deles.
+**Marco de fonte secundária não recebe contagem regressiva.**
 
-Isso existe porque dois alarmes 🔴 anteriores se revelaram falsos por virem de
-fonte secundária. Contar dias para uma data que ninguém publicou é fabricar
-urgência, e urgência fabricada destrói a confiança no bot inteiro.
+Infográfico de Instagram, notícia e post de professor entram no `marcos.json`
+com `"verificado": false`, e o bot só lembra de conferir a fonte primária. Ele
+não conta dias em cima disso.
+
+Isso está aqui porque eu já levei dois alarmes vermelhos que se revelaram falsos,
+os dois vindos de fonte secundária. Contar dias para uma data que ninguém publicou
+é fabricar urgência, e urgência fabricada estraga a confiança no bot inteiro.
 
 Só entra com `"verificado": true` o que vier de edital em PDF, Diário Oficial,
 site do órgão ou da banca.
@@ -95,10 +108,35 @@ site do órgão ou da banca.
 
 | Arquivo | O quê |
 |---|---|
-| `config/estrutura.py` | categorias, canais, fóruns, tags, cargos e a mensagem fixada de `#alvo` |
-| `config/marcos.json` | concursos e datas, com marcação de fonte primária/secundária |
-| `setup_servidor.py` | cria a estrutura no Discord |
+| `config/estrutura.py` | categorias, canais, fóruns, tags, o plano de reconversão e a mensagem fixada do `#alvo` |
+| `config/marcos.json` | concursos e datas, marcando fonte primária ou secundária |
+| `config/credenciais.py` | valida token e guild id, e diz qual campo do portal foi colado errado |
+| `convite.py` | link de convite do bot |
+| `diagnostico.py` | inventário do servidor, somente leitura |
+| `setup_servidor.py` | cria e reconverte a estrutura |
+| `membros.py` | lista e remove membros |
 | `sentinela.py` | bot de prazos, streak e questões |
-| `estado.json` | gerado em runtime — confirmações e streak (fora do git) |
+| `estado.json` | gerado em runtime, fora do git |
 
 `.env` e `estado.json` estão no `.gitignore`.
+
+## Branches
+
+Gitflow. `main` é o que está rodando, `develop` é a integração, e cada mudança
+nasce em `feature/<nome>` a partir de `develop`.
+
+```bash
+git checkout develop
+git checkout -b feature/minha-mudanca
+# trabalha, commita
+git push -u origin feature/minha-mudanca
+```
+
+Merge para `develop` via PR, com `--no-ff` para o histórico não achatar.
+Direto na `main` só release.
+
+## Se você quiser montar o seu
+
+A estrutura toda vive em `config/`, como dado. Clona o repo, troca o
+`marcos.json` pelos seus concursos, ajusta o `estrutura.py` e roda o setup no
+seu servidor. Não precisa mexer no código.
