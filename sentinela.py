@@ -468,13 +468,23 @@ async def aviso_do_bloco():
     await canal.send(content=cargo.mention if cargo else None, embed=em)
 
 
-def _coletar_anki_isolado() -> dict:
-    """Roda numa thread separada, entao PRECISA da propria conexao: objeto
-    SQLite pertence a thread que o criou. Passar a conexao global daqui
-    levantou ProgrammingError na primeira subida. O WAL cuida da concorrencia."""
+def _sincronizar_anki_isolado() -> dict:
+    """Entrega a fila E fotografa a colecao, nesta ordem.
+
+    Roda numa thread separada, entao PRECISA da propria conexao: objeto SQLite
+    pertence a thread que o criou. Passar a conexao global daqui levantou
+    ProgrammingError na primeira subida. O WAL cuida da concorrencia.
+
+    A entrega mora aqui, e nao so no anki_sync.py, porque senao o card ficava
+    esperando alguem lembrar de rodar um script na mao - e a promessa e que
+    /erro faz o card aparecer sozinho.
+    """
     c = db.conectar()
     try:
-        return anki_sync.coletar_stats(c)
+        pendentes = db.cards_pendentes(c)
+        entregues = anki_sync.enviar_por_ankiconnect(c, pendentes) if pendentes else 0
+        stats = anki_sync.coletar_stats(c)
+        return {**stats, "entregues": entregues}
     finally:
         c.close()
 
@@ -487,12 +497,19 @@ async def ler_anki():
     try:
         if not await asyncio.to_thread(anki_sync.anki_disponivel):
             return
-        s = await asyncio.to_thread(_coletar_anki_isolado)
-        if s["dificeis"] or s["revisados_hoje"]:
-            print(f"Anki lido: {s['revisados_hoje']} revisão(ões) hoje, "
-                  f"{s['dificeis']} card(s) difícil(eis).")
+        s = await asyncio.to_thread(_sincronizar_anki_isolado)
+
+        if s["entregues"]:
+            canal = canal_por_nome(CANAL_ERROS)
+            if canal:
+                await canal.send(
+                    f"📗 {s['entregues']} card(s) entregues ao Anki agora.")
+        if s["entregues"] or s["dificeis"] or s["revisados_hoje"]:
+            print(f"Anki: {s['entregues']} entregue(s) · "
+                  f"{s['revisados_hoje']} revisão(ões) hoje · "
+                  f"{s['dificeis']} difícil(eis).")
     except Exception as e:
-        print(f"Anki: falha ao ler ({e}). Segue com o último snapshot.")
+        print(f"Anki: falha ({e}). A fila fica intacta, tento de novo em 30 min.")
 
 
 @tasks.loop(time=HORA_RELATORIO)
