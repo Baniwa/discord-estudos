@@ -50,6 +50,7 @@ CARGO_ALVO = "⚔️ Maidens"
 
 CANAL_BOAS_VINDAS = "🤙🏽┇boas-vindas"
 CANAL_METAS = "metas-do-dia"
+CANAL_AULAS = "aulas"
 
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
 # O bloco muda de horario no fim de semana: 18h nos dias uteis, 09h30 no
@@ -206,6 +207,29 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
                   f"`{mat:<18}` {a}/{f} = {p:.0f}%"
                   for p, mat, a, f in piores[:8]]
         em.add_field(name="Por matéria (pior primeiro)", value="\n".join(linhas),
+                     inline=False)
+
+    # 2b. Aulas. Separado de questoes de proposito: assistir e consumo,
+    # resolver e producao. Semana so de aula aparece como semana sem producao.
+    aulas_disc = db.aulas_periodo(con, desde, ate)
+    if aulas_disc:
+        total_min = sum(a["min"] or 0 for a in aulas_disc)
+        linhas = [f"`{a['disciplina']:<16}` {a['n']} aula(s) · {a['min'] or 0} min"
+                  for a in aulas_disc[:6]]
+        alerta = ""
+        if r["questoes_pessoa"]:
+            feitas = sum(q["f"] for q in r["questoes_pessoa"])
+            if total_min > 120 and feitas < total_min / 10:
+                alerta = ("\n⚠️ **Muita aula e pouca questão no período.** "
+                          "A prova é de questão, não de aula.")
+        else:
+            alerta = "\n⚠️ **Nenhuma questão registrada no período.**"
+        # Aula e call medem coisas diferentes e PODEM se sobrepor: assistir
+        # dentro da sala de voz conta nas duas. Sem esta nota, quem le
+        # "2h em call" e "2h de aula" soma 4h, que nunca aconteceram.
+        rodape = ("\n\n*Minutos de aula e tempo em call medem coisas diferentes e podem se sobrepor. Não somam.*")
+        em.add_field(name=f"🎧 Aulas — {total_min} min",
+                     value="\n".join(linhas) + alerta + rodape,
                      inline=False)
 
     # 3. Anki. O que ela errou de novo, que e o unico sinal que muda a semana.
@@ -535,7 +559,8 @@ async def ler_anki():
 
 def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
     b = bloco_do_dia(dia)
-    houve = [p for p in pessoas if p["segundos_voz"] or p["questoes"] or p["erros"]]
+    houve = [p for p in pessoas
+             if p["segundos_voz"] or p["questoes"] or p["erros"] or p["aulas"]]
 
     em = discord.Embed(
         title=f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}",
@@ -559,6 +584,8 @@ def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
             linhas.append(f"✏️ {sinal} {p['acertos']}/{p['questoes']} = {pct:.0f}%")
         else:
             linhas.append("✏️ nenhuma questão registrada")
+        if p["aulas"]:
+            linhas.append(f"🎧 {p['aulas']} aula(s), {p['minutos_aula']} min")
         linhas.append(f"📗 {p['erros']} erro(s) · {p['cards']} card(s) novo(s)")
         linhas.append("✅ mínimo fechado" if p["minimo"]
                       else "⚪ mínimo não registrado (`/estudei`)")
@@ -707,6 +734,45 @@ async def cmd_anki(i: discord.Interaction):
             inline=False)
 
     await i.response.send_message(embed=em)
+
+
+@bot.tree.command(name="aula", description="Registra uma aula assistida")
+@app_commands.describe(
+    disciplina="Matéria da aula",
+    aula="Qual aula (número e título)",
+    minutos="Duração assistida, em minutos",
+    professor="Quem dá a aula (opcional)",
+    fonte="Onde (Estratégia, YouTube, PDF...)",
+    nota="O que ficou dessa aula, em uma linha (opcional)")
+async def cmd_aula(i: discord.Interaction, disciplina: str, aula: str, minutos: int,
+                   professor: str = None, fonte: str = "Estratégia",
+                   nota: str = None):
+    if minutos <= 0 or minutos > 600:
+        await i.response.send_message(
+            "Minutos fora do razoável (1 a 600).", ephemeral=True)
+        return
+
+    db.registrar_aula(con, i.user.id, i.user.display_name, disciplina,
+                      professor, aula, minutos, fonte, nota)
+
+    em = discord.Embed(
+        title=aula[:250],
+        description=f"**{disciplina}**" + (f" · {professor}" if professor else ""),
+        colour=0x5865F2)
+    em.add_field(name="Duração", value=f"{minutos} min", inline=True)
+    em.add_field(name="Fonte", value=fonte, inline=True)
+    if nota:
+        em.add_field(name="O que ficou", value=nota[:500], inline=False)
+    em.set_footer(text=f"{i.user.display_name} · aula assistida não é questão "
+                       f"resolvida. Fecha com /questoes.")
+
+    canal = canal_por_nome(CANAL_AULAS)
+    if canal and canal.id != i.channel_id:
+        await canal.send(embed=em)
+        await i.response.send_message(
+            f"Registrada em {canal.mention}.", ephemeral=True)
+    else:
+        await i.response.send_message(embed=em)
 
 
 @bot.tree.command(name="questoes", description="Registra questões feitas")
