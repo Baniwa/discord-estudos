@@ -109,6 +109,24 @@ CREATE TABLE IF NOT EXISTS anki_dificeis (
 -- Fechamento do dia, uma linha por pessoa. Guardado, e nao so postado, porque
 -- e o que permite dizer depois "voce cumpriu 9 dos 14 dias da S1" - adesao ao
 -- plano, que nenhuma das outras tabelas responde sozinha.
+-- Aula assistida. Fica separado de `questoes` de proposito: assistir aula e
+-- consumo, resolver questao e producao, e misturar os dois num numero so
+-- esconde a semana em que ela so assistiu.
+CREATE TABLE IF NOT EXISTS aulas (
+    id          INTEGER PRIMARY KEY,
+    usuario_id  INTEGER NOT NULL,
+    usuario     TEXT    NOT NULL,
+    dia         TEXT    NOT NULL,
+    disciplina  TEXT    NOT NULL,
+    professor   TEXT,
+    aula        TEXT    NOT NULL,
+    minutos     INTEGER NOT NULL DEFAULT 0,
+    fonte       TEXT,
+    nota        TEXT,
+    registrado  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_aulas_dia ON aulas(dia);
+
 CREATE TABLE IF NOT EXISTS log_diario (
     dia          TEXT NOT NULL,
     usuario_id   INTEGER NOT NULL,
@@ -119,6 +137,8 @@ CREATE TABLE IF NOT EXISTS log_diario (
     acertos      INTEGER NOT NULL DEFAULT 0,
     erros        INTEGER NOT NULL DEFAULT 0,
     cards        INTEGER NOT NULL DEFAULT 0,
+    aulas        INTEGER NOT NULL DEFAULT 0,
+    minutos_aula INTEGER NOT NULL DEFAULT 0,
     minimo       INTEGER NOT NULL DEFAULT 0,
     fechado_em   TEXT NOT NULL,
     PRIMARY KEY (dia, usuario_id)
@@ -341,6 +361,32 @@ def resumo(con, desde: str, ate: str) -> dict:
             "minimos": minimos, "erros": erros, "desde": desde, "ate": ate}
 
 
+def registrar_aula(con, usuario_id, usuario, disciplina, professor, aula,
+                   minutos, fonte=None, nota=None) -> int:
+    cur = con.execute(
+        "INSERT INTO aulas (usuario_id, usuario, dia, disciplina, professor,"
+        " aula, minutos, fonte, nota, registrado) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (usuario_id, usuario, hoje(), disciplina.lower().strip(), professor,
+         aula.strip(), minutos, fonte, nota, datetime.now(TZ).isoformat()))
+    con.commit()
+    return cur.lastrowid
+
+
+def aulas_periodo(con, desde: str, ate: str):
+    """Por disciplina, para o relatorio."""
+    return con.execute(
+        "SELECT disciplina, COUNT(*) n, SUM(minutos) min FROM aulas"
+        " WHERE dia BETWEEN ? AND ? GROUP BY disciplina ORDER BY min DESC",
+        (desde, ate)).fetchall()
+
+
+def aulas_por_pessoa(con, desde: str, ate: str):
+    return con.execute(
+        "SELECT usuario, usuario_id, COUNT(*) n, SUM(minutos) min FROM aulas"
+        " WHERE dia BETWEEN ? AND ? GROUP BY usuario_id ORDER BY min DESC",
+        (desde, ate)).fetchall()
+
+
 def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
     """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
     dia recalcula em vez de duplicar."""
@@ -349,7 +395,8 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
     def slot(uid, nome):
         return pessoas.setdefault(uid, {
             "usuario_id": uid, "usuario": nome, "segundos_voz": 0,
-            "questoes": 0, "acertos": 0, "erros": 0, "cards": 0, "minimo": 0})
+            "questoes": 0, "acertos": 0, "erros": 0, "cards": 0, "minimo": 0,
+            "aulas": 0, "minutos_aula": 0})
 
     for r in con.execute(
             "SELECT usuario_id, usuario, SUM(segundos) s FROM sessoes_voz"
@@ -374,16 +421,23 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
         slot(r["usuario_id"], r["usuario"])["cards"] = r["n"]
 
     for r in con.execute(
+            "SELECT usuario_id, usuario, COUNT(*) n, SUM(minutos) m FROM aulas"
+            " WHERE dia=? GROUP BY usuario_id", (dia,)):
+        d = slot(r["usuario_id"], r["usuario"])
+        d["aulas"], d["minutos_aula"] = r["n"], r["m"] or 0
+
+    for r in con.execute(
             "SELECT usuario_id, usuario FROM minimos WHERE dia=?", (dia,)):
         slot(r["usuario_id"], r["usuario"])["minimo"] = 1
 
     agora = datetime.now(TZ).isoformat()
     con.executemany(
         "INSERT OR REPLACE INTO log_diario (dia, usuario_id, usuario, semana,"
-        " segundos_voz, questoes, acertos, erros, cards, minimo, fechado_em)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        " segundos_voz, questoes, acertos, erros, cards, aulas, minutos_aula,"
+        " minimo, fechado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(dia, p["usuario_id"], p["usuario"], semana, p["segundos_voz"],
-          p["questoes"], p["acertos"], p["erros"], p["cards"], p["minimo"], agora)
+          p["questoes"], p["acertos"], p["erros"], p["cards"], p["aulas"],
+          p["minutos_aula"], p["minimo"], agora)
          for p in pessoas.values()])
     con.commit()
     return list(pessoas.values())

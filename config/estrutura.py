@@ -67,6 +67,10 @@ ESTRUTURA = [
             {"tipo": "forum", "nome": "basicas",
              "topico": "Materias comuns a todos os alvos.",
              "tags": ["portugues", "rlm-estatistica", "ingles", "bancarios", "redacao"]},
+            {"tipo": "texto", "nome": "aulas",
+             "topico": "Aula assistida vai aqui, pelo /aula. Serve para a outra "
+                       "saber onde voce esta na trilha, e para o relatorio separar "
+                       "consumo de producao."},
             {"tipo": "forum", "nome": "duvidas",
              "topico": "Duvida assincrona. Perfis complementares (fullstack x frontend) - "
                        "e aqui que estudar em par rende mais.",
@@ -108,9 +112,9 @@ REAPROVEITAR = [
     {"de": "🎶 ┇ Música", "para": "🗣️ Discussão",
      "categoria": "🔊 SALA DE ESTUDO",
      "motivo": "mic on, para destravar questao"},
-    {"de": "🛋 ┇ English Class", "para": None,
+    {"de": "🛋 ┇ English Class", "para": "📺 Aula em grupo",
      "categoria": "🔊 SALA DE ESTUDO",
-     "motivo": "fica como esta - Ingles vale 5% da prova do BB"},
+     "motivo": "sala para assistir aula junto; Ingles do BB cabe aqui tambem"},
 
     # Canal de curso que ja era do assunto.
     {"de": "📊┇analise-de-sistemas", "para": None,
