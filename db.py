@@ -159,11 +159,44 @@ CREATE TABLE IF NOT EXISTS mensagens_marco (
 """
 
 
+# Colunas acrescentadas depois que o banco ja existia. CREATE TABLE IF NOT
+# EXISTS nao altera tabela criada antes, entao sem isto o banco em producao
+# fica com o esquema velho e o INSERT quebra em runtime - foi exatamente o
+# que aconteceu com log_diario quando `aulas` entrou.
+MIGRACOES = [
+    ("log_diario", "aulas", "INTEGER NOT NULL DEFAULT 0"),
+    ("log_diario", "minutos_aula", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def migrar(con) -> list[str]:
+    aplicadas = []
+    for tabela, coluna, tipo in MIGRACOES:
+        existe = con.execute(
+            "SELECT COUNT(*) c FROM pragma_table_info(?) WHERE name=?",
+            (tabela, coluna)).fetchone()[0]
+        if existe:
+            continue
+        tem_tabela = con.execute(
+            "SELECT COUNT(*) c FROM sqlite_master WHERE type='table' AND name=?",
+            (tabela,)).fetchone()[0]
+        if not tem_tabela:
+            continue
+        con.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+        aplicadas.append(f"{tabela}.{coluna}")
+    if aplicadas:
+        con.commit()
+    return aplicadas
+
+
 def conectar() -> sqlite3.Connection:
     con = sqlite3.connect(ARQUIVO)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")   # sobrevive a queda no meio da escrita
     con.executescript(ESQUEMA)
+    feitas = migrar(con)
+    if feitas:
+        print("Migração aplicada:", ", ".join(feitas))
     return con
 
 

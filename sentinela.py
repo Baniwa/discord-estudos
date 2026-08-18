@@ -58,7 +58,11 @@ HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
 # sabado ter passado, o que e pior que nao avisar.
 HORA_BLOCO_SEMANA = time(hour=17, minute=45, tzinfo=TZ)
 HORA_BLOCO_FDS = time(hour=9, minute=15, tzinfo=TZ)
-HORA_LOG = time(hour=22, minute=30, tzinfo=TZ)        # fecha o dia
+# Fecha as 02h o dia ANTERIOR, nao as 22h30 o dia corrente. O padrao dela e
+# estudar ate tarde, com sessao atravessando a meia-noite (esta registrado
+# no cofre). Fechando as 22h30, tudo que acontece depois ficava fora do log
+# do proprio dia, justamente nas noites em que ela mais produz.
+HORA_LOG = time(hour=2, minute=0, tzinfo=TZ)
 HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)   # domingo
 
 DATA_PROVA = datetime(2026, 11, 22, tzinfo=TZ)
@@ -600,7 +604,7 @@ def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
 async def fechamento_diario():
     """Fecha o dia e grava. E o log que amarra o que aconteceu ao que o
     calendario mandava estudar - sem isso, tempo em call vira numero solto."""
-    dia = datetime.now(TZ).date()
+    dia = datetime.now(TZ).date() - timedelta(days=1)   # fecha o dia que passou
     semana = bloco_do_dia(dia)["rotulo"]
     pessoas = db.fechar_dia(con, dia.isoformat(), semana)
 
