@@ -224,8 +224,13 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
                           "A prova é de questão, não de aula.")
         else:
             alerta = "\n⚠️ **Nenhuma questão registrada no período.**"
+        # Aula e call medem coisas diferentes e PODEM se sobrepor: assistir
+        # dentro da sala de voz conta nas duas. Sem esta nota, quem le
+        # "2h em call" e "2h de aula" soma 4h, que nunca aconteceram.
+        rodape = ("\n\n*Minutos de aula e tempo em call medem coisas diferentes e podem se sobrepor. Não somam.*")
         em.add_field(name=f"🎧 Aulas — {total_min} min",
-                     value="\n".join(linhas) + alerta, inline=False)
+                     value="\n".join(linhas) + alerta + rodape,
+                     inline=False)
 
     # 3. Anki. O que ela errou de novo, que e o unico sinal que muda a semana.
     revisados = db.anki_revisados(con, desde, ate)
