@@ -27,12 +27,15 @@ CARGOS = []  # nada a criar
 #   tags: so para forum
 ESTRUTURA = [
     {
-        # As salas de voz NAO sao criadas: sao as quatro que ja existiam em
-        # VOIP, renomeadas (ver REAPROVEITAR). Criar novas deixaria oito canais
-        # de voz num servidor de duas pessoas.
+        # As salas de estudo NAO sao criadas: sao as quatro que ja existiam em
+        # VOIP, renomeadas (ver REAPROVEITAR). A de simulado e a excecao, e
+        # nasce aqui: o /simulado precisa de um lugar so dele, onde entrar ja
+        # significa "estou em prova, nao me chame".
         "categoria": "🔊 SALA DE ESTUDO",
         "proposito": "O coracao do servidor. Voz e o produto; texto e o arquivo.",
-        "canais": [],
+        "canais": [
+            {"tipo": "voz", "nome": "🧪 Simulado"},
+        ],
     },
     {
         "categoria": "🎯 COMANDO",

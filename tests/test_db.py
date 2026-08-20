@@ -200,6 +200,67 @@ def test_materias_de_banco_vazio(con):
     assert db.materias(con) == []
 
 
+# ----------------------------------------------------------------- simulados
+
+def test_simulado_aberto_guarda_o_fim_previsto(con):
+    db.abrir_simulado(con, 1, "Alguém", "CEBRASPE ", 210)
+
+    aberto = db.simulado_aberto_de(con, 1)
+    inicio = datetime.fromisoformat(aberto["inicio"])
+    fim = datetime.fromisoformat(aberto["fim_previsto"])
+
+    assert aberto["materia"] == "cebraspe"
+    assert round((fim - inicio).total_seconds() / 60) == 210
+
+
+def test_simulado_encerrado_sai_da_lista_de_abertos(con):
+    simulado = db.abrir_simulado(con, 1, "Alguém", "cebraspe", 60)
+    assert len(db.simulados_abertos(con)) == 1
+
+    db.encerrar_simulado(con, simulado)
+    assert db.simulados_abertos(con) == []
+    assert db.simulado_aberto_de(con, 1) is None
+
+
+def test_aviso_dado_fica_gravado_e_nao_duplica(con):
+    simulado = db.abrir_simulado(con, 1, "Alguém", "cebraspe", 210)
+
+    db.marcar_aviso(con, simulado, ["metade"])
+    db.marcar_aviso(con, simulado, ["metade", "30"])
+
+    avisos = db.simulados_abertos(con)[0]["avisos"]
+    assert avisos.split(",") == ["metade", "30"]
+
+
+def test_resultado_fecha_o_simulado_e_grava_a_nota(con):
+    simulado = db.abrir_simulado(con, 1, "Alguém", "cebraspe", 210)
+
+    db.registrar_resultado(con, simulado, 84, 120)
+
+    assert db.simulados_abertos(con) == []
+    assert db.simulado_sem_resultado(con, 1) is None
+    linha = db.simulados_periodo(con, db.hoje(), db.hoje())[0]
+    assert (linha["acertos"], linha["total"]) == (84, 120)
+
+
+def test_simulado_sem_nota_e_o_que_o_resultado_procura(con):
+    antigo = db.abrir_simulado(con, 1, "Alguém", "administrativo", 60)
+    db.registrar_resultado(con, antigo, 10, 20)
+    novo = db.abrir_simulado(con, 1, "Alguém", "cebraspe", 210)
+
+    assert db.simulado_sem_resultado(con, 1)["id"] == novo
+
+
+def test_simulado_sem_nota_nao_entra_no_relatorio(con):
+    db.abrir_simulado(con, 1, "Alguém", "cebraspe", 210)
+    assert db.simulados_periodo(con, db.hoje(), db.hoje()) == []
+
+
+def test_materia_de_simulado_alimenta_o_autocomplete(con):
+    db.abrir_simulado(con, 1, "Alguém", "cebraspe", 210)
+    assert db.materias(con, "cebr") == ["cebraspe"]
+
+
 # ------------------------------------------------------------------ migracao
 
 def test_migracao_acrescenta_coluna_em_banco_que_ja_existia(tmp_path, monkeypatch):

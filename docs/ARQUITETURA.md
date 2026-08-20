@@ -46,6 +46,7 @@ concurso é trocar `marcos.json` e `agenda.py`, sem tocar em código.
         /questoes /erro /aula ... registro manual, menos de 1 min no dia
         sai da call ............. sessão fecha, #diario anuncia se passou de 10 min
 a/30min ler_anki ................ entrega a fila de cards e fotografa a coleção
+/simulado ....................... #simulados, avisa na metade, aos 30 e aos 10
 02h00   fechamento_diario ....... #diario, fechando o dia ANTERIOR
 dom 20h relatorio_semanal ....... #marcos (ou #diario)
 ```
@@ -54,7 +55,7 @@ dom 20h relatorio_semanal ....... #marcos (ou #diario)
 
 ### `setup_hook`
 
-Roda a migração do `estado.json` antigo e liga os cinco loops. Só isso.
+Roda a migração do `estado.json` antigo e liga os seis loops. Só isso.
 
 Sessão órfã **não** é fechada aqui. Quem ainda está na call continua estudando,
 e fechar cegamente picava a sessão dela em pedaços a cada restart. O tratamento
@@ -80,7 +81,7 @@ Sessão órfã fecha pelo último instante plausível, com teto de 4 horas. Perd
 hora estudada desmotiva mais que contar de menos, mas sessão aberta há mais de
 4h é o bot que caiu, não alguém estudando.
 
-## As cinco tarefas
+## As seis tarefas
 
 ### `briefing_diario` (07h00)
 
@@ -132,6 +133,20 @@ então rodar de novo recalcula em vez de duplicar.
 Dia sem nada registrado sai em vermelho, com o que estava previsto. É isso que
 permite responder depois "cumpri 9 dos 14 dias da S1", que nenhum outro número
 responde sozinho.
+
+### `vigiar_simulados` (a cada minuto)
+
+O único loop de minuto em minuto, e ele existe porque simulado tem hora para
+acabar. Para cada simulado aberto no banco: se o tempo virou, encerra e anuncia;
+se não, olha quais avisos venceram e ainda não foram dados.
+
+O estado mora no banco, não em memória, então o cronômetro sobrevive a restart:
+subir de novo no meio de um simulado de 3h30 não repete o aviso dos 30 minutos
+nem esquece de anunciar o fim. Se o bot ficou fora do ar e várias marcas
+venceram de uma vez, ele grava todas como dadas e anuncia só a mais urgente.
+
+A contagem regressiva visível não é trabalho do bot: a mensagem leva um
+timestamp do Discord (`<t:…:R>`), e quem conta é o cliente de quem está lendo.
 
 ### `relatorio_semanal` (domingo 20h)
 

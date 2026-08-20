@@ -174,4 +174,62 @@ def test_adesao_avisa_quando_o_plano_ainda_nao_comecou(bot_com_banco, monkeypatc
 def test_a_arvore_registra_os_comandos_publicados():
     nomes = {c.name for c in sentinela.bot.tree.get_commands()}
     assert nomes == {"prazos", "relatorio", "agora", "estudei", "erro", "anki",
-                     "aula", "questoes", "bloco", "hoje", "adesao"}
+                     "aula", "questoes", "bloco", "hoje", "adesao", "simulado",
+                     "resultado"}
+
+
+# ------------------------------------------------------------------ simulado
+
+def test_simulado_longo_avisa_na_metade_aos_30_e_aos_10():
+    assert sentinela.avisos_pendentes(210, 209, set()) == []
+    assert sentinela.avisos_pendentes(210, 105, set()) == ["metade"]
+    assert sentinela.avisos_pendentes(210, 29, {"metade"}) == ["30"]
+    assert sentinela.avisos_pendentes(210, 9, {"metade", "30"}) == ["10"]
+
+
+def test_aviso_ja_dado_nao_volta():
+    assert sentinela.avisos_pendentes(210, 9, {"metade", "30", "10"}) == []
+
+
+def test_bot_que_ficou_fora_do_ar_junta_os_avisos_atrasados():
+    atrasados = sentinela.avisos_pendentes(210, 8, set())
+    assert atrasados == ["metade", "30", "10"]
+    assert atrasados[-1] == "10"
+
+
+def test_simulado_curto_nao_avisa_marca_maior_que_ele():
+    assert sentinela.avisos_pendentes(20, 19, set()) == []
+    assert sentinela.avisos_pendentes(20, 9, set()) == ["10"]
+    assert sentinela.avisos_pendentes(60, 59, set()) == []
+    assert sentinela.avisos_pendentes(60, 29, set()) == ["30"]
+
+
+@pytest.mark.parametrize("marca, trecho", [
+    ("metade", "metade"), ("30", "30 minutos"), ("10", "10 minutos"),
+])
+def test_cada_aviso_tem_texto_proprio(marca, trecho):
+    assert trecho in sentinela.texto_do_aviso(marca, "Alguém", "cebraspe")
+
+
+def test_embed_do_simulado_diz_quando_termina():
+    fim = datetime.now(sentinela.TZ) + timedelta(minutes=210)
+    em = sentinela.montar_simulado("cebraspe", 210, fim, sala=None)
+
+    assert "Termina" in campos(em)
+    assert f"<t:{int(fim.timestamp())}:R>" in texto(em)
+    assert "/resultado" in em.footer.text
+
+
+def test_embed_do_simulado_sem_a_sala_ainda_diz_onde_sentar():
+    fim = datetime.now(sentinela.TZ) + timedelta(minutes=60)
+    em = sentinela.montar_simulado("cebraspe", 60, fim, sala=None)
+    assert sentinela.CATEGORIA_ESTUDO in texto(em)
+
+
+def test_relatorio_mostra_a_nota_do_simulado(bot_com_banco):
+    simulado = db.abrir_simulado(bot_com_banco, 1, "Alguém", "cebraspe", 210)
+    db.registrar_resultado(bot_com_banco, simulado, 84, 120)
+
+    em = sentinela.montar_relatorio(7, "Relatório da semana")
+    assert "🧪 Simulados" in campos(em)
+    assert "84/120" in texto(em)
