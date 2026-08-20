@@ -1,0 +1,145 @@
+# Comandos, eventos e tarefas
+
+Referência completa do que o bot expõe. Para o dia a dia, o resumo está no
+[COMO-USAR.md](../COMO-USAR.md); para o funcionamento por dentro,
+[ARQUITETURA.md](ARQUITETURA.md).
+
+Os comandos são sincronizados por guild no `on_ready`, então mudança de nome ou
+de parâmetro aparece no Discord no restart seguinte, sem esperar propagação
+global.
+
+## Slash commands
+
+### `/estudei`
+
+Sem parâmetros. Marca o mínimo inegociável do dia e devolve streak atual e
+recorde. Um por dia por pessoa: chamar de novo responde em ephemeral que já
+está registrado, sem duplicar. Streak de 7 dias ou mais troca o ✅ por 🔥.
+
+### `/erro materia pergunta resposta`
+
+| Parâmetro | Tipo | Obrigatório |
+|---|---|---|
+| `materia` | texto | sim |
+| `pergunta` | texto | sim, é a frente do card |
+| `resposta` | texto | sim, é o verso: o que é certo, e por quê |
+
+Enfileira o card e registra o erro na mesma chamada. Responde com o número do
+card e quantos estão pendentes na fila. A entrega ao Anki é do `ler_anki`, a
+cada 30 minutos.
+
+Alternativa sem comando: mensagem em `#erros-do-dia` no formato
+`[matéria] frente :: verso`. Depende da intent MESSAGE CONTENT.
+
+### `/questoes materia feitas acertos`
+
+| Parâmetro | Tipo | Obrigatório |
+|---|---|---|
+| `materia` | texto | sim, gravada em minúscula |
+| `feitas` | inteiro | sim, maior que zero |
+| `acertos` | inteiro | sim, entre 0 e `feitas` |
+
+Recusa em ephemeral se os números não fecham. Abaixo de 60% vem com aviso: é a
+meta de corte usada no relatório.
+
+### `/aula disciplina aula minutos [professor] [fonte] [nota]`
+
+| Parâmetro | Tipo | Padrão |
+|---|---|---|
+| `disciplina` | texto | — |
+| `aula` | texto, número e título | — |
+| `minutos` | inteiro de 1 a 600 | — |
+| `professor` | texto | vazio |
+| `fonte` | texto | `Estratégia` |
+| `nota` | texto, o que ficou em uma linha | vazio |
+
+Publica o embed em `#aulas`. Se o comando foi chamado de outro canal, a
+confirmação volta em ephemeral e o registro fica só em `#aulas`.
+
+Aula é consumo, questão é produção. O relatório mantém os dois separados de
+propósito, e avisa quando a semana teve muita aula e pouca questão.
+
+### `/questoes` e `/aula` no mesmo dia
+
+Não há vínculo entre os dois. São tabelas diferentes, e a leitura útil é a
+razão entre elas no relatório, não o pareamento aula por aula.
+
+### `/anki`
+
+Sem parâmetros. Três blocos:
+
+1. **Fila do bot** — cards ainda não entregues, agrupados por matéria.
+2. **Coleção** — último snapshot lido do Anki, por deck, com a data da leitura.
+   Se o Anki nunca esteve aberto com o AnkiConnect, diz isso em vez de mostrar
+   zero.
+3. **O que não gruda** — os 5 cards com mais lapsos.
+
+Lê do banco, nunca do AnkiConnect ao vivo, então responde igual com o Anki
+fechado.
+
+### `/relatorio periodo`
+
+`periodo` é escolha fixa: semana (7 dias), quinzena (14) ou mês (30). Mesmo
+embed do relatório de domingo. Usa `defer`, porque a montagem passa dos 3
+segundos de resposta imediata do Discord.
+
+O relatório traz, nesta ordem: tempo em call por pessoa com streak, questões por
+pessoa, questões por matéria da pior para a melhor, aulas, estado do Anki, o que
+não gruda, consistência (dias com o mínimo e erros lançados) e a projeção de
+questões até a prova.
+
+A linha que importa é a matéria no topo da lista de piores. É ela que pauta a
+semana seguinte.
+
+### `/prazos`
+
+Sem parâmetros. O mesmo embed do briefing das 07h, sob demanda: marcos
+confirmados por fonte primária com contagem regressiva e farol, e abaixo os
+concursos sem edital, listados sem contagem.
+
+### `/agora`
+
+Sem parâmetros. Quem está em call na categoria `🔊 SALA DE ESTUDO` neste
+momento. Lê o estado de voz da guild, não o banco.
+
+## O que acontece sem comando
+
+| Gatilho | O que o bot faz |
+|---|---|
+| entrar em canal de `🔊 SALA DE ESTUDO` | abre a sessão e começa a cronometrar |
+| sair do canal | fecha a sessão; anuncia em `#diario` se passou de 10 min |
+| mensagem em `#erros-do-dia` | conta o erro; vira card se tiver `::`; reage 📗 ou 📝 |
+| ✅ em mensagem de briefing | confirma o marco, grava quem confirmou e para de cobrar |
+| membro novo entra | boas-vindas em `🤙🏽┇boas-vindas` com as três regras |
+
+## Tarefas agendadas
+
+Fuso de `config/marcos.json` (`America/Sao_Paulo`).
+
+| Horário | Tarefa | Canal | Condição |
+|---|---|---|---|
+| 07h00 | `briefing_diario` | `#editais-e-prazos` | só se há prazo dentro do limite, ou se é segunda |
+| 17h45 | `aviso_do_bloco` | `#metas-do-dia` | dia útil |
+| 09h15 | `aviso_do_bloco` | `#metas-do-dia` | sábado e domingo |
+| a cada 30 min | `ler_anki` | `#erros-do-dia` | só fala quando entregou card |
+| 02h00 | `fechamento_diario` | `#diario` | fecha o dia anterior, sempre |
+| domingo 20h | `relatorio_semanal` | `#marcos` | só domingo |
+
+## Scripts de operação
+
+Não são comandos do Discord. Rodam no terminal, com o bot parado ou não.
+
+| Comando | O que faz |
+|---|---|
+| `python convite.py` | gera o link de convite com as permissões certas |
+| `python diagnostico.py` | inventário do servidor, só leitura |
+| `python setup_servidor.py --dry-run` | mostra o que faria, sem tocar em nada |
+| `python setup_servidor.py` | cria e reconverte a estrutura, idempotente |
+| `python semear_foruns.py` | reação padrão e post inicial dos fóruns |
+| `python publicar.py` | publica regras e calendário |
+| `python membros.py` | lista membros (`--remover` para aplicar) |
+| `python limpar.py` | apaga o que não serve, em três faixas |
+| `python anki_sync.py` | entrega a fila à mão e lê estatística |
+| `python sentinela.py` | sobe o bot |
+
+Rode o `--dry-run` antes de qualquer script que escreve.

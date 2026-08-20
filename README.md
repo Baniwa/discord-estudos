@@ -36,6 +36,7 @@ revisão do Anki, card que não gruda) o bot mede.
 | Cards que você mais erra | idem | **zero** |
 | Questões feitas | `/questoes` | ~15 s por dia |
 | Cada erro | `/erro` | ~20 s por erro |
+| Aula assistida | `/aula` | ~20 s por aula |
 | Fechou 1h | `/estudei` | 1 clique |
 
 Menos de um minuto de digitação no dia inteiro.
@@ -46,11 +47,15 @@ Menos de um minuto de digitação no dia inteiro.
 |---|---|
 | `/erro materia pergunta resposta` | lança o erro e enfileira o card do Anki |
 | `/questoes materia feitas acertos` | registra o ciclo de questões |
+| `/aula disciplina aula minutos` | registra a aula assistida em `#aulas` |
 | `/estudei` | marca o mínimo de 1h do dia e alimenta o streak |
 | `/relatorio periodo` | fecha 7, 14 ou 30 dias |
 | `/anki` | fila do bot, estado da coleção e o que não gruda |
 | `/prazos` | contagem regressiva dos editais |
 | `/agora` | quem está em call de estudo |
+
+Parâmetro por parâmetro, validação e comportamento em
+[docs/COMANDOS.md](docs/COMANDOS.md).
 
 ## O que o bot faz sozinho
 
@@ -59,16 +64,20 @@ Menos de um minuto de digitação no dia inteiro.
 | **07h00** | cobra prazo de edital, com escalada e confirmação por ✅ |
 | **17h45** (seg a sex) | avisa o conteúdo do bloco, 15 min antes |
 | **09h15** (sáb e dom) | idem, no horário do bloco de fim de semana |
-| **22h30** | fecha o log do dia e posta em `#diario` |
+| **02h00** | fecha o log do dia anterior e posta em `#diario` |
 | **domingo 20h** | relatório da semana |
 | **a cada 30 min** | entrega os cards ao Anki e fotografa a coleção |
 | contínuo | cronometra call, conta erro em `#erros-do-dia`, dá boas-vindas |
 
 ### O log diário
 
-Todo dia às 22h30 o bot fecha o dia e grava. O log traz tempo em call, questões
-com percentual, erros, cards novos e se o mínimo foi fechado, **ao lado do que o
-calendário mandava estudar naquele dia**.
+Às 02h o bot fecha o **dia anterior** e grava. O log traz tempo em call, questões
+com percentual, aulas, erros, cards novos e se o mínimo foi fechado, **ao lado do
+que o calendário mandava estudar naquele dia**.
+
+Fecha às 02h, e não às 22h30, porque sessão que atravessa a meia-noite é comum
+aqui. Com o corte antes da virada, a noite mais produtiva ficava fora do próprio
+log.
 
 Dia sem nada registrado sai em vermelho, dizendo o que estava previsto e não
 aconteceu. É isso que permite depois responder "cumpri 9 dos 14 dias da S1", que
@@ -91,7 +100,7 @@ os dois vindos de fonte secundária. Contar dias para uma data que ninguém publ
 ```
 🔊 SALA DE ESTUDO    Estudo Silencioso · Pomodoro 25-5 · Discussão · English Class
 🎯 COMANDO           #alvo · #calendario · #metas-do-dia · #diario · #erros-do-dia · #simulados
-📚 CONHECIMENTO      #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas (fóruns)
+📚 CONHECIMENTO      #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas (fóruns) · #aulas
 📋 LOGÍSTICA         #editais-e-prazos · #biblioteca · #marcos
 👅 LINGUAGENS        javascript · html-e-css · python · bash · linux
 ☕ CYBER LOUNGE      bate-papo · memes · img
@@ -174,6 +183,21 @@ a cada digitação diferente.
 | `estudos.db` | gerado em runtime, fora do git |
 
 `.env`, `estudos.db` e `*.apkg` estão no `.gitignore`.
+
+## Documentação
+
+O código não leva comentário. O "porquê" de cada decisão mora aqui.
+
+| Documento | Para quê |
+|---|---|
+| [COMO-USAR.md](COMO-USAR.md) | o ciclo do dia, para quem só vai estudar |
+| [docs/COMANDOS.md](docs/COMANDOS.md) | todo comando, parâmetro, validação, evento e tarefa |
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | módulos, ciclo de vida, os cinco loops e as armadilhas que já custaram bug |
+| [docs/BANCO.md](docs/BANCO.md) | tabela por tabela, migrações e a API do `db.py` |
+| [DEPLOY.md](DEPLOY.md) | subir e manter no ar |
+
+Mudou comportamento, muda o documento no mesmo commit. Documento que descreve
+horário que não é mais o horário é pior que documento nenhum.
 
 ## Branches
 
