@@ -48,7 +48,8 @@ ESTRUTURA = [
              "topico": "O canal mais importante. Todo item errado entra aqui e vira card no Anki. "
                        "Dia sem mensagem aqui e dia que nao aconteceu."},
             {"tipo": "texto", "nome": "simulados",
-             "topico": "So resultado por materia. Formato: data | simulado | materia | acertos/total | %"},
+             "topico": "So resultado por materia. Formato: "
+                       "data | simulado | materia | acertos/total | %"},
         ],
     },
     {
