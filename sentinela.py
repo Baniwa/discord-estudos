@@ -1,21 +1,11 @@
 """Sentinela — bot do servidor de estudos.
 
-Faz quatro coisas:
-
   1. Cobra prazo de edital, com escalada e confirmacao por reacao.
   2. Cronometra sozinho o tempo em call na SALA DE ESTUDO. Isto e o que
      sustenta os relatorios: dado que ninguem precisa lembrar de digitar.
   3. Conta os erros lancados em #erros-do-dia.
   4. Fecha relatorio semanal e sob demanda.
-
-O ponto de desenho: o unico numero em que da para confiar e o que o bot mede
-sozinho. Relatorio feito so de auto-declaracao mede disciplina de preencher
-formulario, nao estudo.
-
-Uso:
-    python sentinela.py
 """
-
 import json
 import os
 import sys
@@ -53,17 +43,10 @@ CANAL_METAS = "metas-do-dia"
 CANAL_AULAS = "aulas"
 
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
-# O bloco muda de horario no fim de semana: 18h nos dias uteis, 09h30 no
-# sabado e no domingo. Um aviso unico as 17h45 chegava DEPOIS do bloco de
-# sabado ter passado, o que e pior que nao avisar.
 HORA_BLOCO_SEMANA = time(hour=17, minute=45, tzinfo=TZ)
 HORA_BLOCO_FDS = time(hour=9, minute=15, tzinfo=TZ)
-# Fecha as 02h o dia ANTERIOR, nao as 22h30 o dia corrente. O padrao dela e
-# estudar ate tarde, com sessao atravessando a meia-noite (esta registrado
-# no cofre). Fechando as 22h30, tudo que acontece depois ficava fora do log
-# do proprio dia, justamente nas noites em que ela mais produz.
 HORA_LOG = time(hour=2, minute=0, tzinfo=TZ)
-HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)   # domingo
+HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)
 
 DATA_PROVA = datetime(2026, 11, 22, tzinfo=TZ)
 DIAS_SEMANA = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
@@ -284,16 +267,12 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
 
 class Sentinela(discord.Client):
     def __init__(self):
-        intents = discord.Intents.default()   # ja inclui voice_states e reactions
-        intents.members = True                # privilegiada: para dar boas-vindas
+        intents = discord.Intents.default()
+        intents.members = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # As sessoes orfas NAO sao fechadas aqui: quem ainda esta na call
-        # continua estudando, e fechar cegamente picava a sessao dela em
-        # pedacos a cada restart meu. O tratamento certo precisa saber quem
-        # esta em call, e isso so existe no on_ready.
         db.migrar_estado_json(con, RAIZ / "estado.json")
         briefing_diario.start()
         aviso_do_bloco.start()
@@ -302,9 +281,6 @@ class Sentinela(discord.Client):
         ler_anki.start()
 
     async def on_ready(self):
-        # O sync dos comandos NAO pode ir no setup_hook: la o cache de guilds
-        # ainda esta vazio, e usar o GUILD_ID cru quebra se o .env estiver com
-        # a application id. Aqui a guild ja esta resolvida de verdade.
         global GUILD_ID
         g = guild_alvo(self)
         if g is None:
@@ -319,8 +295,6 @@ class Sentinela(discord.Client):
             self._comandos_sincronizados = True
             print(f"Comandos sincronizados em {g.name}.")
 
-        # Quem esta em call agora mantem a sessao aberta, sem fechar e reabrir:
-        # do contrario cada restart picava uma sessao unica em varias.
         em_call = set()
         for canal in g.voice_channels:
             if canal.category and canal.category.name == CATEGORIA_ESTUDO:
@@ -338,8 +312,6 @@ class Sentinela(discord.Client):
 
 
 def guild_alvo(cliente: discord.Client):
-    """A guild em que o bot opera. Aceita GUILD_ID vazio ou errado: com o bot
-    em um servidor so, nao ha ambiguidade."""
     if GUILD_ID and GUILD_ID != cliente.user.id:
         g = cliente.get_guild(GUILD_ID)
         if g:
@@ -363,8 +335,6 @@ def e_canal_de_estudo(canal) -> bool:
 
 @bot.event
 async def on_member_join(membro: discord.Member):
-    """Boas-vindas. Curto de proposito: as tres coisas que a pessoa precisa
-    fazer, e nao um tour pelos 15 canais."""
     if membro.bot:
         return
     canal = canal_por_nome(CANAL_BOAS_VINDAS)
@@ -414,13 +384,6 @@ async def on_voice_state_update(membro, antes, depois):
 
 @bot.event
 async def on_message(msg: discord.Message):
-    """Erro lancado em #erros-do-dia.
-
-    Sem a intent message_content, `msg.content` vem VAZIO: da para contar que
-    houve um erro, mas nao para montar o card. Entao:
-      - com a intent ligada, a convencao `pergunta :: resposta` vira card;
-      - sem ela, conta o erro e avisa que o card so sai pelo /erro.
-    """
     if msg.author.bot or not msg.guild:
         return
     if getattr(msg.channel, "name", None) != CANAL_ERROS:
@@ -491,11 +454,8 @@ async def briefing_diario():
 
 @tasks.loop(time=[HORA_BLOCO_SEMANA, HORA_BLOCO_FDS])
 async def aviso_do_bloco():
-    """15 min antes do bloco, diz o que estudar hoje. Sem isto, o comeco do
-    bloco vira decisao, e decisao no fim do dia e onde o plano se perde."""
     agora = datetime.now(TZ)
     fim_de_semana = agora.weekday() >= 5
-    # Dispara nos dois horarios; so publica no que corresponde ao dia.
     if fim_de_semana != (agora.hour < 12):
         return
 
@@ -518,16 +478,6 @@ async def aviso_do_bloco():
 
 
 def _sincronizar_anki_isolado() -> dict:
-    """Entrega a fila E fotografa a colecao, nesta ordem.
-
-    Roda numa thread separada, entao PRECISA da propria conexao: objeto SQLite
-    pertence a thread que o criou. Passar a conexao global daqui levantou
-    ProgrammingError na primeira subida. O WAL cuida da concorrencia.
-
-    A entrega mora aqui, e nao so no anki_sync.py, porque senao o card ficava
-    esperando alguem lembrar de rodar um script na mao - e a promessa e que
-    /erro faz o card aparecer sozinho.
-    """
     c = db.conectar()
     try:
         pendentes = db.cards_pendentes(c)
@@ -540,8 +490,6 @@ def _sincronizar_anki_isolado() -> dict:
 
 @tasks.loop(minutes=30)
 async def ler_anki():
-    """Fotografa o Anki quando ele estiver aberto. Silencioso de proposito:
-    Anki fechado e o estado normal, nao um erro que mereca aviso."""
     import asyncio
     try:
         if not await asyncio.to_thread(anki_sync.anki_disponivel):
@@ -602,8 +550,6 @@ def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
 
 @tasks.loop(time=HORA_LOG)
 async def fechamento_diario():
-    """Fecha o dia e grava. E o log que amarra o que aconteceu ao que o
-    calendario mandava estudar - sem isso, tempo em call vira numero solto."""
     dia = datetime.now(TZ).date() - timedelta(days=1)   # fecha o dia que passou
     semana = bloco_do_dia(dia)["rotulo"]
     pessoas = db.fechar_dia(con, dia.isoformat(), semana)
@@ -686,9 +632,6 @@ async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta
     card_id = db.enfileirar_card(con, i.user.id, i.user.display_name,
                                  materia, pergunta, resposta, fonte="/erro")
     pend = len(db.cards_pendentes(con))
-    # None, nao 0: mensagem_id e UNIQUE, e o SQLite aceita varios NULL mas so
-    # um 0. Com `card_id or 0`, o segundo /erro do dia que caisse em duplicata
-    # era engolido pelo INSERT OR IGNORE e sumia da contagem.
     db.registrar_erro(con, i.user.id, i.user.display_name, card_id)
 
     await i.response.send_message(
