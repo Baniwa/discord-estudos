@@ -41,6 +41,8 @@ CARGO_ALVO = "⚔️ Maidens"
 CANAL_BOAS_VINDAS = "🤙🏽┇boas-vindas"
 CANAL_METAS = "metas-do-dia"
 CANAL_AULAS = "aulas"
+CANAL_SIMULADOS = "simulados"
+SALA_SIMULADO = "🧪 Simulado"
 
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
 HORA_BLOCO_SEMANA = time(hour=17, minute=45, tzinfo=TZ)
@@ -217,6 +219,17 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
                      value="\n".join(linhas) + alerta + rodape,
                      inline=False)
 
+    # 2c. Simulado. Nota sob pressao, que nao se mistura com questao treinada.
+    provas = db.simulados_periodo(con, desde, ate)
+    if provas:
+        linhas = []
+        for p in provas[:6]:
+            pct = 100 * p["acertos"] / p["total"] if p["total"] else 0
+            sinal = "🟢" if pct >= 70 else "🟡" if pct >= 60 else "🔴"
+            linhas.append(f"{sinal} `{p['materia']:<16}` {p['acertos']}/{p['total']}"
+                          f" = {pct:.0f}% · {p['dia'][8:10]}/{p['dia'][5:7]}")
+        em.add_field(name="🧪 Simulados", value="\n".join(linhas), inline=False)
+
     # 3. Anki. O que ela errou de novo, que e o unico sinal que muda a semana.
     revisados = db.anki_revisados(con, desde, ate)
     dificeis = db.anki_top_dificeis(con, 5)
@@ -258,6 +271,51 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
     projecao = int(total_q / dias * faltam) if dias and total_q else 0
     em.set_footer(text=f"Prova em {faltam} dias · nesse ritmo, mais ~{projecao} questões "
                        f"até lá")
+    return em
+
+
+# ----------------------------------------------------------------- simulados
+
+def avisos_pendentes(minutos: int, restante: float, enviados: set[str]) -> list[str]:
+    """As marcas que já venceram e ainda não foram anunciadas, da mais folgada
+    para a mais urgente."""
+    marcas = []
+    if minutos > 90:
+        marcas.append(("metade", minutos / 2))
+    marcas += [("30", 30), ("10", 10)]
+
+    return [nome for nome, limite in marcas
+            if limite < minutos and restante <= limite and nome not in enviados]
+
+
+def texto_do_aviso(marca: str, nome: str, materia: str) -> str:
+    if marca == "metade":
+        return (f"⏳ **{nome}** — metade do simulado de {materia}. "
+                f"Se travou numa questão, pula e volta depois.")
+    if marca == "30":
+        return (f"⏳ **{nome}** — 30 minutos. "
+                f"Hora de fechar o que está aberto, não de começar bloco novo.")
+    return f"⏰ **{nome}** — 10 minutos. Transfira o gabarito agora."
+
+
+def montar_simulado(materia: str, minutos: int, fim: datetime,
+                    sala) -> discord.Embed:
+    em = discord.Embed(
+        title=f"Simulado de {materia}",
+        description=f"Começou agora, {minutos} minutos.",
+        colour=0xEB459E)
+    em.add_field(name="Termina",
+                 value=f"<t:{int(fim.timestamp())}:t> · <t:{int(fim.timestamp())}:R>",
+                 inline=False)
+    em.add_field(
+        name="Onde",
+        value=(f"{sala.mention} — mic e câmera off, cronômetro por minha conta."
+               if sala else
+               f"Sem a sala `{SALA_SIMULADO}` no servidor. "
+               f"Vale qualquer canal de {CATEGORIA_ESTUDO}."),
+        inline=False)
+    em.set_footer(text="Aviso na metade, aos 30 e aos 10. "
+                       "No fim, lance a nota com /resultado.")
     return em
 
 
@@ -321,6 +379,7 @@ class Sentinela(discord.Client):
         relatorio_semanal.start()
         fechamento_diario.start()
         ler_anki.start()
+        vigiar_simulados.start()
 
     async def on_ready(self):
         global GUILD_ID
@@ -612,6 +671,35 @@ async def fechamento_diario():
         await canal.send(embed=montar_log_diario(dia, pessoas))
 
 
+@tasks.loop(minutes=1)
+async def vigiar_simulados():
+    agora = datetime.now(TZ)
+    for s in db.simulados_abertos(con):
+        canal = bot.get_channel(s["canal_id"]) if s["canal_id"] else None
+        canal = canal or canal_por_nome(CANAL_SIMULADOS)
+        restante = (datetime.fromisoformat(s["fim_previsto"]) - agora).total_seconds() / 60
+
+        if restante <= 0:
+            db.encerrar_simulado(con, s["id"])
+            if canal:
+                await canal.send(
+                    f"🏁 **{s['usuario']}** — acabou o tempo do simulado de "
+                    f"**{s['materia']}**.\n"
+                    f"Corrija agora, enquanto lembra por que marcou. "
+                    f"A nota entra com `/resultado`, e cada erro com `/erro`.")
+            continue
+
+        pendentes = avisos_pendentes(
+            s["minutos"], restante, {m for m in s["avisos"].split(",") if m})
+        if not pendentes:
+            continue
+
+        db.marcar_aviso(con, s["id"], pendentes)
+        if canal:
+            await canal.send(
+                texto_do_aviso(pendentes[-1], s["usuario"], s["materia"]))
+
+
 @tasks.loop(time=HORA_RELATORIO)
 async def relatorio_semanal():
     if datetime.now(TZ).weekday() != 6:      # so domingo
@@ -626,6 +714,7 @@ async def relatorio_semanal():
 @relatorio_semanal.before_loop
 @fechamento_diario.before_loop
 @ler_anki.before_loop
+@vigiar_simulados.before_loop
 async def antes():
     await bot.wait_until_ready()
 
@@ -798,6 +887,63 @@ async def cmd_questoes(i: discord.Interaction, materia: str, feitas: int, acerto
     await i.response.send_message(
         f"**{materia}** — {acertos}/{feitas} = **{pct:.0f}%**{alerta}\n"
         f"Os erros vão para **#{CANAL_ERROS}** e viram card no Anki.")
+
+
+@bot.tree.command(name="simulado", description="Abre a janela de simulado, com tempo")
+@app_commands.autocomplete(materia=sugerir_materia)
+@app_commands.describe(materia="Matéria ou banca do simulado",
+                       duracao="Duração em minutos (padrão 210, a prova do TCDF)")
+async def cmd_simulado(i: discord.Interaction, materia: str,
+                       duracao: app_commands.Range[int, 15, 360] = 210):
+    aberto = db.simulado_aberto_de(con, i.user.id)
+    if aberto:
+        fim = datetime.fromisoformat(aberto["fim_previsto"])
+        await i.response.send_message(
+            f"Você já tem um simulado de **{aberto['materia']}** correndo, "
+            f"termina <t:{int(fim.timestamp())}:R>. Feche com `/resultado`.",
+            ephemeral=True)
+        return
+
+    simulado = db.abrir_simulado(con, i.user.id, i.user.display_name, materia, duracao)
+    fim = datetime.now(TZ) + timedelta(minutes=duracao)
+    sala = discord.utils.get(i.guild.voice_channels, name=SALA_SIMULADO)
+    em = montar_simulado(materia.lower().strip(), duracao, fim, sala)
+
+    canal = canal_por_nome(CANAL_SIMULADOS)
+    if canal and canal.id != i.channel_id:
+        msg = await canal.send(content=i.user.mention, embed=em)
+        await i.response.send_message(f"Correndo em {canal.mention}.", ephemeral=True)
+    else:
+        await i.response.send_message(embed=em)
+        msg = await i.original_response()
+
+    db.anotar_mensagem_do_simulado(con, simulado, msg.channel.id, msg.id)
+
+
+@bot.tree.command(name="resultado", description="Lança a nota do simulado")
+@app_commands.describe(acertos="Quantas certas", total="Quantas questões tinha")
+async def cmd_resultado(i: discord.Interaction, acertos: int, total: int):
+    if total <= 0 or not 0 <= acertos <= total:
+        await i.response.send_message(
+            "Números inconsistentes: acertos tem que estar entre 0 e total.",
+            ephemeral=True)
+        return
+
+    simulado = db.simulado_sem_resultado(con, i.user.id)
+    if simulado is None:
+        await i.response.send_message(
+            "Não achei simulado seu esperando nota. Abra com `/simulado`, ou "
+            "use `/questoes` se foi ciclo de questões, não prova.", ephemeral=True)
+        return
+
+    db.registrar_resultado(con, simulado["id"], acertos, total)
+    pct = 100 * acertos / total
+    sinal = "🟢" if pct >= 70 else "🟡" if pct >= 60 else "🔴"
+    await i.response.send_message(
+        f"{sinal} **{simulado['materia']}** — {acertos}/{total} = **{pct:.0f}%** "
+        f"em {simulado['minutos']} min.\n"
+        f"Nota de simulado não entra no ciclo de questões: ela mede prova, não "
+        f"treino. Cada erro vira card com `/erro`.")
 
 
 @bot.tree.command(name="bloco", description="O que estudar hoje, segundo o plano")

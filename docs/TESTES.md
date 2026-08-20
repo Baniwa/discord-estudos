@@ -19,7 +19,7 @@ e `develop` e em todo pull request.
 |---|---|
 | `test_db.py` | esquema, migração, sessão de voz, streak, fila de cards, fechamento do dia |
 | `test_agenda.py` | bloco certo para cada dia da semana e integridade das 14 semanas |
-| `test_sentinela.py` | os embeds, o farol de prazos e a árvore de comandos |
+| `test_sentinela.py` | os embeds, o farol de prazos, os avisos de simulado e a árvore de comandos |
 
 Os testes existem principalmente para segurar as regras que já quebraram uma vez.
 Cada um destes corresponde a um bug real:
@@ -37,6 +37,9 @@ Cada um destes corresponde a um bug real:
   sem sujar o log.
 - **marco de fonte secundária não entra na contagem.** Contar dias para data que
   ninguém publicou é fabricar urgência.
+- **aviso de simulado não repete e não some.** As marcas ficam no banco: bot
+  que reinicia no meio não reavisa, e bot que passa um tempo fora anuncia a mais
+  urgente em vez de despejar todas.
 - **a pior matéria vem primeiro no relatório.** É a linha que pauta a semana
   seguinte; se a ordem inverte, a leitura inverte junto.
 

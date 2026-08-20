@@ -33,6 +33,7 @@ questão feita, erro cometido e aula assistida.
 | Questões feitas | `/questoes` | ~15 s por dia |
 | Cada erro | `/erro` | ~20 s por erro |
 | Aula assistida | `/aula` | ~20 s por aula |
+| Nota do simulado | `/resultado` | 1 vez por prova |
 | Fechou o mínimo | `/estudei` | 1 clique |
 
 Menos de um minuto de digitação no dia inteiro.
@@ -44,6 +45,8 @@ Menos de um minuto de digitação no dia inteiro.
 | `/erro materia pergunta resposta` | lança o erro e enfileira o card do Anki |
 | `/questoes materia feitas acertos` | registra o ciclo de questões |
 | `/aula disciplina aula minutos` | registra a aula assistida em `#aulas` |
+| `/simulado materia duracao` | abre a janela de simulado, com aviso de tempo |
+| `/resultado acertos total` | lança a nota do simulado que acabou |
 | `/estudei` | marca o mínimo do dia e alimenta o streak |
 | `/hoje` | o dia até agora, sem esperar o fechamento das 02h |
 | `/bloco` | o que estudar hoje ou amanhã, segundo o plano |
@@ -70,6 +73,7 @@ Parâmetro por parâmetro, validação e comportamento em
 | **02h00** | fecha o log do dia anterior e posta em `#diario` |
 | **domingo 20h** | relatório da semana |
 | **a cada 30 min** | entrega os cards ao Anki e fotografa a coleção |
+| durante o simulado | avisa na metade, aos 30 e aos 10, e anuncia o fim |
 | contínuo | cronometra call, conta erro em `#erros-do-dia`, dá boas-vindas |
 
 ### O log diário
@@ -115,7 +119,7 @@ precisa de digitação cabe em três comandos curtos.
 ## Estrutura do servidor
 
 ```
-🔊 SALA DE ESTUDO    Estudo Silencioso · Pomodoro 25-5 · Discussão · English Class
+🔊 SALA DE ESTUDO    Estudo Silencioso · Pomodoro 25-5 · Discussão · English Class · 🧪 Simulado
 🎯 COMANDO           #alvo · #metas-do-dia · #diario · #erros-do-dia · #simulados
 📚 CONHECIMENTO      #nucleo-ti · #auditoria-e-direito · #basicas · #duvidas (fóruns) · #aulas
 📋 LOGÍSTICA         #editais-e-prazos · #biblioteca · #marcos
@@ -211,7 +215,7 @@ O código não leva comentário narrativo. O "porquê" de cada decisão mora aqu
 |---|---|
 | [COMO-USAR.md](COMO-USAR.md) | o ciclo do dia, para quem só vai estudar |
 | [docs/COMANDOS.md](docs/COMANDOS.md) | todo comando, parâmetro, validação, evento e tarefa |
-| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | módulos, ciclo de vida, os cinco loops e as armadilhas que já custaram bug |
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | módulos, ciclo de vida, os seis loops e as armadilhas que já custaram bug |
 | [docs/BANCO.md](docs/BANCO.md) | tabela por tabela, migrações e a API do `db.py` |
 | [docs/TESTES.md](docs/TESTES.md) | como rodar, o que a suíte garante e como escrever mais |
 | [DEPLOY.md](DEPLOY.md) | subir e manter no ar |

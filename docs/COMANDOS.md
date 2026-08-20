@@ -61,11 +61,45 @@ confirmação volta em ephemeral e o registro fica só em `#aulas`.
 Aula é consumo, questão é produção. O relatório mantém os dois separados de
 propósito, e avisa quando a semana teve muita aula e pouca questão.
 
+### `/simulado materia duracao`
+
+| Parâmetro | Tipo | Padrão |
+|---|---|---|
+| `materia` | texto, com autocomplete | — |
+| `duracao` | inteiro de 15 a 360 minutos | 210, a duração da prova do TCDF |
+
+Abre a janela de simulado e publica em `#simulados` a hora de fim. O bot avisa
+na metade (só em simulado de mais de 90 min), aos 30 e aos 10 minutos, e anuncia
+o fim.
+
+A hora de fim vai como timestamp do Discord (`<t:…:R>`), que o cliente renderiza
+como contagem regressiva ao vivo. É por isso que o bot não fica editando a
+mensagem de minuto em minuto: quem conta é o cliente de quem está lendo.
+
+Uma pessoa só pode ter um simulado aberto por vez. Chamar de novo responde
+quando o atual termina.
+
+A sala de voz `🧪 Simulado` fica na categoria de estudo, então o tempo de prova
+já é cronometrado pelo mesmo mecanismo das sessões, sem nada de novo. Se a sala
+não existir no servidor, o comando funciona igual e aponta a categoria de
+estudo — rode o `setup_servidor.py` para criá-la.
+
+### `/resultado acertos total`
+
+Lança a nota no último simulado seu que ainda não tem nota, e o fecha. Sem
+simulado esperando nota, responde em ephemeral apontando o `/questoes`.
+
+Nota de simulado **não** entra no ciclo de questões. São coisas diferentes:
+questão treinada mede estudo, simulado mede prova, e somar as duas apaga a
+única medida sob pressão que existe. O relatório mostra os dois em blocos
+separados.
+
 ### Autocomplete de matéria
 
-`/erro`, `/questoes` (parâmetro `materia`) e `/aula` (parâmetro `disciplina`)
-sugerem o que já foi registrado antes, da matéria mais usada para a menos, no
-máximo 25 opções. Vem de `db.materias()`, que junta questões, cards e aulas.
+`/erro`, `/questoes`, `/simulado` (parâmetro `materia`) e `/aula` (parâmetro
+`disciplina`) sugerem o que já foi registrado antes, da matéria mais usada
+para a menos, no máximo 25 opções. Vem de `db.materias()`, que junta
+questões, cards, simulados e aulas.
 
 Não é lista fechada: matéria nova continua sendo aceita digitando. A sugestão
 existe para que nome novo só nasça quando não há nenhum parecido. Tudo é gravado
@@ -98,8 +132,8 @@ embed do relatório de domingo. Usa `defer`, porque a montagem passa dos 3
 segundos de resposta imediata do Discord.
 
 O relatório traz, nesta ordem: tempo em call por pessoa com streak, questões por
-pessoa, questões por matéria da pior para a melhor, aulas, estado do Anki, o que
-não gruda, consistência (dias com o mínimo e erros lançados) e a projeção de
+pessoa, questões por matéria da pior para a melhor, aulas, simulados, estado
+do Anki, o que não gruda, consistência (dias com o mínimo e erros lançados) e a projeção de
 questões até a prova.
 
 A linha que importa é a matéria no topo da lista de piores. É ela que pauta a
@@ -169,6 +203,7 @@ Fuso de `config/marcos.json` (`America/Sao_Paulo`).
 | 17h45 | `aviso_do_bloco` | `#metas-do-dia` | dia útil |
 | 09h15 | `aviso_do_bloco` | `#metas-do-dia` | sábado e domingo |
 | a cada 30 min | `ler_anki` | `#erros-do-dia` | só fala quando entregou card |
+| a cada minuto | `vigiar_simulados` | `#simulados` | só quando há simulado aberto |
 | 02h00 | `fechamento_diario` | `#diario` | fecha o dia anterior, sempre |
 | domingo 20h | `relatorio_semanal` | `#marcos` | só domingo |
 

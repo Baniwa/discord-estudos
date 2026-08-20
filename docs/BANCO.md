@@ -71,6 +71,23 @@ Card com mais lapsos, com facilidade e intervalo. É o único sinal do Anki que
 muda o que estudar na semana seguinte: card que não gruda é conceito para voltar
 ao bloco de conteúdo, não para revisar mais forte.
 
+### `simulados`
+
+Uma linha por janela de simulado: matéria, duração, início, fim previsto, a
+mensagem que anunciou e a nota quando ela chega.
+
+Fica no banco, e não em memória, porque simulado de 3h30 não pode depender de o
+processo ficar de pé o tempo todo. `avisos` guarda as marcas já anunciadas
+("metade", "30", "10"), então o bot que sobe no meio do simulado não repete o
+aviso dos 30 minutos.
+
+Simulado sem `total` é simulado sem nota lançada, e é o que o `/resultado`
+procura. Simulado sem `encerrado_em` é simulado correndo, e é o que o loop de
+um minuto vigia.
+
+Nota de simulado não é gravada em `questoes` de propósito. Questão treinada e
+prova sob pressão medem coisas diferentes, e somar as duas apaga a segunda.
+
 ### `log_diario`
 
 Fechamento do dia, uma linha por pessoa, chave `(dia, usuario_id)`. Guardado, e
@@ -128,6 +145,9 @@ Nenhum SQL vive fora deste arquivo.
 | `fechar_dia(dia, semana)` | agrega, grava e devolve a linha de cada pessoa |
 | `adesao(desde, ate)` | dias com log, dias com o mínimo e tempo, por pessoa |
 | `materias(prefixo)` | matérias já usadas, da mais frequente para a menos |
+| `abrir_simulado` / `simulado_aberto_de` / `simulados_abertos` | janela de simulado |
+| `marcar_aviso` / `encerrar_simulado` | estado do cronômetro, que sobrevive a restart |
+| `simulado_sem_resultado` / `registrar_resultado` / `simulados_periodo` | nota do simulado |
 | `gravar_snapshot_anki` / `gravar_dificeis` | escrita vinda do `anki_sync` |
 | `anki_ultimo_snapshot` / `anki_revisados` / `anki_top_dificeis` | leitura para relatório e `/anki` |
 | `confirmar_marco` / `marcos_confirmados` / `vincular_mensagem` / `marcos_da_mensagem` | marcos |
