@@ -135,12 +135,12 @@ o fórum vira só uma lista de coisas que ninguém sabe.
 responder. "Entendi que convalida vício de competência, mas não sei se vale
 quando a competência é exclusiva" dá.
 
-**Por que este fórum tende a funcionar:** a Giulia é fullstack e usa AWS, a
-Larissa é frontend. Engenharia de software fica coberta pelos dois lados.
+**Por que este fórum tende a funcionar:** os perfis aqui são
+complementares, e engenharia de software fica coberta pelos dois lados.
 
 E o mais importante: **redes, infraestrutura e auditoria de sistemas são
-vermelho das duas.** Ninguém tem vantagem ali, e é onde estudar em par rende
-mais.""",
+vermelho de todo mundo.** Ninguém tem vantagem ali, e é onde estudar em par
+rende mais.""",
         },
     },
 }
