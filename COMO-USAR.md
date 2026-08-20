@@ -13,8 +13,8 @@ Se você não consegue escrever a meta em uma linha, ela está grande demais.
 **2. Entra em `🔇 Estudo Silencioso`.**
 Isso é o registro de ponto. O bot cronometra sozinho, não precisa avisar nada.
 Mic e câmera desligados, ninguém fala. A presença da outra é o ponto, não a
-conversa. Se a Lari estiver lá, você entra. Se não estiver, você entra do mesmo
-jeito, porque ela vai ver que você está.
+conversa. Se alguém já estiver lá, você entra. Se não estiver, você entra do
+mesmo jeito, porque a outra pessoa vai ver que você está.
 
 **3. Estuda o bloco.**
 18h00 às 19h45 nos dias úteis: 20 min de português, 45 min de conteúdo novo,
@@ -64,15 +64,16 @@ Obsidian: a página se reescreve em vez de virar pilha cronológica.
 `#duvidas` tem tag `aberta` e `resolvida`. Marca `resolvida` quando fechar,
 porque dúvida resolvida vira material de revisão e dúvida aberta vira fila.
 
-## O que cada uma traz
+## O que cada pessoa traz
 
-Eu sou fullstack e uso AWS. A Lari é frontend. Isso cobre engenharia de software
-por dois ângulos e resolve boa parte do `#duvidas` sem precisar de fora.
+Estudar em par só rende se os perfis forem diferentes. Dois backends cobrem o
+mesmo pedaço duas vezes; um backend e um frontend cobrem engenharia de software
+pelos dois lados e resolvem boa parte do `#duvidas` sem precisar de fora.
 
-O que nenhuma das duas domina é **redes, infraestrutura e auditoria de sistemas**.
-É onde o estudo em par rende mais, e é onde a prova do BACEN concentra questão.
-Auditoria de sistemas é o único vermelho de TI das duas, e é justamente o que
-define o destino da trilha.
+O que importa mais é mapear o que **ninguém** do grupo domina. Esse assunto não
+vai aparecer sozinho no `#duvidas`, e é justamente onde o estudo em par rende
+mais. No plano de exemplo que acompanha o repo, esse buraco é redes,
+infraestrutura e auditoria de sistemas.
 
 ## O ciclo da semana
 
