@@ -28,7 +28,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import anki_sync  # noqa: E402
 import db  # noqa: E402
-from config.agenda import MINIMO, bloco_do_dia  # noqa: E402
+from config.agenda import MINIMO, SEMANAS, bloco_do_dia  # noqa: E402
 
 CONFIG = json.loads((RAIZ / "config" / "marcos.json").read_text(encoding="utf-8"))
 TZ = ZoneInfo(CONFIG["timezone"])
@@ -263,6 +263,50 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
     return em
 
 
+# ------------------------------------------------------------------- adesao
+
+def montar_adesao() -> discord.Embed:
+    hoje = datetime.now(TZ).date()
+    em = discord.Embed(title="Adesão ao plano", colour=0x5865F2)
+
+    comecadas = [(inicio, fim, rotulo) for inicio, fim, rotulo, _ in SEMANAS
+                 if inicio <= hoje]
+    if not comecadas:
+        em.description = ("O plano começa em "
+                          f"{SEMANAS[0][0]:%d/%m/%Y}. Nada a cobrar ainda.")
+        return em
+
+    linhas = []
+    for inicio, fim, rotulo in comecadas[-8:]:
+        ate = min(fim, hoje)
+        dias = (ate - inicio).days + 1
+        pessoas = db.adesao(con, inicio.isoformat(), ate.isoformat())
+        corpo = " · ".join(f"{p['usuario']} **{p['dias_com_minimo'] or 0}**/{dias}"
+                           for p in pessoas) or f"ninguém — 0/{dias}"
+        marca = "▶" if fim >= hoje else "　"
+        linhas.append(f"{marca} `{rotulo.split(' — ')[0]:<7}` {corpo}")
+
+    em.add_field(name="Dias com o mínimo, por semana do plano",
+                 value="\n".join(linhas), inline=False)
+
+    inicio_plano = SEMANAS[0][0]
+    dias_plano = (hoje - inicio_plano).days + 1
+    geral = db.adesao(con, inicio_plano.isoformat(), hoje.isoformat())
+    if geral:
+        em.add_field(
+            name="No plano inteiro",
+            value="\n".join(
+                f"**{p['usuario']}** — {p['dias_com_minimo'] or 0}/{dias_plano} dias "
+                f"com o mínimo · {p['dias_com_log'] or 0} com algum registro · "
+                f"{hm(p['s'] or 0)} em call"
+                for p in geral),
+            inline=False)
+
+    em.set_footer(text="Conta os dias já fechados. O de hoje entra no "
+                       "fechamento das 02h.")
+    return em
+
+
 # --------------------------------------------------------------------- bot
 
 class Sentinela(discord.Client):
@@ -452,6 +496,18 @@ async def briefing_diario():
             db.vincular_mensagem(con, msg.id, m["id"])
 
 
+def montar_bloco(dia, titulo: str) -> discord.Embed:
+    b = bloco_do_dia(dia)
+    em = discord.Embed(
+        title=f"{titulo} — {b['hora']}",
+        description=f"**{b['rotulo']}**\n{b['conteudo']}",
+        colour=0xFEE75C)
+    em.add_field(name="Estrutura", value=b["estrutura"], inline=False)
+    em.set_footer(text=f"{MINIMO}  ·  prova em "
+                       f"{(DATA_PROVA.date() - dia).days} dias")
+    return em
+
+
 @tasks.loop(time=[HORA_BLOCO_SEMANA, HORA_BLOCO_FDS])
 async def aviso_do_bloco():
     agora = datetime.now(TZ)
@@ -462,17 +518,8 @@ async def aviso_do_bloco():
     canal = canal_por_nome(CANAL_METAS)
     if canal is None:
         return
-    hoje = agora.date()
-    b = bloco_do_dia(hoje)
 
-    em = discord.Embed(
-        title=f"Bloco de hoje — {b['hora']}",
-        description=f"**{b['rotulo']}**\n{b['conteudo']}",
-        colour=0xFEE75C)
-    em.add_field(name="Estrutura", value=b["estrutura"], inline=False)
-    em.set_footer(text=f"{MINIMO}  ·  prova em "
-                       f"{(DATA_PROVA.date() - hoje).days} dias")
-
+    em = montar_bloco(agora.date(), "Bloco de hoje")
     cargo = discord.utils.get(canal.guild.roles, name=CARGO_ALVO)
     await canal.send(content=cargo.mention if cargo else None, embed=em)
 
@@ -509,21 +556,29 @@ async def ler_anki():
         print(f"Anki: falha ({e}). A fila fica intacta, tento de novo em 30 min.")
 
 
-def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
+def montar_log_diario(dia, pessoas: list[dict], parcial: bool = False) -> discord.Embed:
     b = bloco_do_dia(dia)
     houve = [p for p in pessoas
              if p["segundos_voz"] or p["questoes"] or p["erros"] or p["aulas"]]
 
+    if parcial:
+        vazio = 0xFEE75C
+        titulo = f"Hoje, até agora — {DIAS_SEMANA[dia.weekday()]}"
+    else:
+        vazio = 0xED4245
+        titulo = f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}"
+
     em = discord.Embed(
-        title=f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}",
+        title=titulo,
         description=f"**{b['rotulo']}** · bloco previsto {b['hora']}",
-        colour=0x57F287 if houve else 0xED4245)
+        colour=0x57F287 if houve else vazio)
 
     if not houve:
         em.add_field(
-            name="🔴 Dia sem registro",
+            name="⚪ Ainda sem registro" if parcial else "🔴 Dia sem registro",
             value="Nenhuma call, nenhuma questão, nenhum erro.\n"
-                  "*O que estava previsto:* " + b["conteudo"][:220],
+                  + ("*O que está previsto:* " if parcial else "*O que estava previsto:* ")
+                  + b["conteudo"][:220],
             inline=False)
         em.set_footer(text=MINIMO)
         return em
@@ -579,6 +634,11 @@ async def antes():
 
 # ----------------------------------------------------------------- comandos
 
+async def sugerir_materia(i: discord.Interaction, atual: str):
+    return [app_commands.Choice(name=nome, value=nome)
+            for nome in db.materias(con, atual)]
+
+
 @bot.tree.command(name="prazos", description="Contagem regressiva dos editais")
 async def cmd_prazos(i: discord.Interaction):
     em, _ = montar_briefing()
@@ -626,6 +686,7 @@ async def cmd_estudei(i: discord.Interaction):
 
 
 @bot.tree.command(name="erro", description="Lança um erro e já vira card do Anki")
+@app_commands.autocomplete(materia=sugerir_materia)
 @app_commands.describe(materia="Matéria", pergunta="A frente do card",
                        resposta="O verso: o que é certo, e por quê")
 async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta: str):
@@ -684,6 +745,7 @@ async def cmd_anki(i: discord.Interaction):
 
 
 @bot.tree.command(name="aula", description="Registra uma aula assistida")
+@app_commands.autocomplete(disciplina=sugerir_materia)
 @app_commands.describe(
     disciplina="Matéria da aula",
     aula="Qual aula (número e título)",
@@ -723,6 +785,7 @@ async def cmd_aula(i: discord.Interaction, disciplina: str, aula: str, minutos: 
 
 
 @bot.tree.command(name="questoes", description="Registra questões feitas")
+@app_commands.autocomplete(materia=sugerir_materia)
 @app_commands.describe(materia="Matéria", feitas="Quantas", acertos="Quantas certas")
 async def cmd_questoes(i: discord.Interaction, materia: str, feitas: int, acertos: int):
     if feitas <= 0 or not 0 <= acertos <= feitas:
@@ -737,6 +800,31 @@ async def cmd_questoes(i: discord.Interaction, materia: str, feitas: int, acerto
     await i.response.send_message(
         f"**{materia}** — {acertos}/{feitas} = **{pct:.0f}%**{alerta}\n"
         f"Os erros vão para **#{CANAL_ERROS}** e viram card no Anki.")
+
+
+@bot.tree.command(name="bloco", description="O que estudar hoje, segundo o plano")
+@app_commands.describe(quando="Hoje ou amanhã")
+@app_commands.choices(quando=[
+    app_commands.Choice(name="hoje", value=0),
+    app_commands.Choice(name="amanhã", value=1),
+])
+async def cmd_bloco(i: discord.Interaction, quando: int = 0):
+    dia = datetime.now(TZ).date() + timedelta(days=quando)
+    await i.response.send_message(
+        embed=montar_bloco(dia, "Bloco de amanhã" if quando else "Bloco de hoje"))
+
+
+@bot.tree.command(name="hoje", description="O dia até agora, antes do fechamento das 02h")
+async def cmd_hoje(i: discord.Interaction):
+    dia = datetime.now(TZ).date()
+    await i.response.send_message(
+        embed=montar_log_diario(dia, db.agregar_dia(con, dia.isoformat()),
+                                parcial=True))
+
+
+@bot.tree.command(name="adesao", description="Quantos dias de cada semana do plano foram cumpridos")
+async def cmd_adesao(i: discord.Interaction):
+    await i.response.send_message(embed=montar_adesao())
 
 
 if __name__ == "__main__":
