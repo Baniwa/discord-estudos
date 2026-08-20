@@ -49,10 +49,17 @@ Menos de um minuto de digitação no dia inteiro.
 | `/questoes materia feitas acertos` | registra o ciclo de questões |
 | `/aula disciplina aula minutos` | registra a aula assistida em `#aulas` |
 | `/estudei` | marca o mínimo de 1h do dia e alimenta o streak |
+| `/hoje` | o dia até agora, sem esperar o fechamento das 02h |
+| `/bloco` | o que estudar hoje ou amanhã, segundo o plano |
 | `/relatorio periodo` | fecha 7, 14 ou 30 dias |
+| `/adesao` | quantos dias de cada semana do plano foram cumpridos |
 | `/anki` | fila do bot, estado da coleção e o que não gruda |
 | `/prazos` | contagem regressiva dos editais |
 | `/agora` | quem está em call de estudo |
+
+Matéria tem autocomplete em `/erro`, `/questoes` e `/aula`, alimentado pelo que
+já foi registrado. É o que impede "adm" e "administrativo" de virarem duas
+linhas no relatório da pior matéria.
 
 Parâmetro por parâmetro, validação e comportamento em
 [docs/COMANDOS.md](docs/COMANDOS.md).

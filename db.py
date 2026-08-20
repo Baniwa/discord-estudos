@@ -420,9 +420,9 @@ def aulas_por_pessoa(con, desde: str, ate: str):
         (desde, ate)).fetchall()
 
 
-def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
-    """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
-    dia recalcula em vez de duplicar."""
+def agregar_dia(con, dia: str) -> list[dict]:
+    """O dia por pessoa, sem gravar. Serve ao dia corrente, que ainda nao
+    fechou."""
     pessoas: dict[int, dict] = {}
 
     def slot(uid, nome):
@@ -463,6 +463,13 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
             "SELECT usuario_id, usuario FROM minimos WHERE dia=?", (dia,)):
         slot(r["usuario_id"], r["usuario"])["minimo"] = 1
 
+    return list(pessoas.values())
+
+
+def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
+    """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
+    dia recalcula em vez de duplicar."""
+    pessoas = agregar_dia(con, dia)
     agora = datetime.now(TZ).isoformat()
     con.executemany(
         "INSERT OR REPLACE INTO log_diario (dia, usuario_id, usuario, semana,"
@@ -471,9 +478,22 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
         [(dia, p["usuario_id"], p["usuario"], semana, p["segundos_voz"],
           p["questoes"], p["acertos"], p["erros"], p["cards"], p["aulas"],
           p["minutos_aula"], p["minimo"], agora)
-         for p in pessoas.values()])
+         for p in pessoas])
     con.commit()
-    return list(pessoas.values())
+    return pessoas
+
+
+def materias(con, prefixo: str = "", limite: int = 25) -> list[str]:
+    """Materia ja usada em questao, card ou aula, da mais frequente para a
+    menos. Alimenta o autocomplete: nome novo so nasce quando nao ha parecido."""
+    linhas = con.execute(
+        "SELECT nome, COUNT(*) n FROM ("
+        "  SELECT materia nome FROM questoes"
+        "  UNION ALL SELECT materia FROM cards"
+        "  UNION ALL SELECT disciplina FROM aulas)"
+        " WHERE nome LIKE ? GROUP BY nome ORDER BY n DESC, nome LIMIT ?",
+        (f"%{prefixo.lower().strip()}%", limite)).fetchall()
+    return [linha["nome"] for linha in linhas]
 
 
 def adesao(con, desde: str, ate: str) -> list:

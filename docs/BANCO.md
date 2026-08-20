@@ -124,15 +124,16 @@ Nenhum SQL vive fora deste arquivo.
 | `enfileirar_card` / `cards_pendentes` / `marcar_entregue` | fila do Anki |
 | `periodo(dias)` / `resumo(desde, ate)` | janela e agregado do relatório |
 | `aulas_periodo` / `aulas_por_pessoa` | aulas agregadas |
-| `fechar_dia(dia, semana)` | consolida e devolve a linha de cada pessoa |
+| `agregar_dia(dia)` | o dia por pessoa, sem gravar; é o que o `/hoje` usa |
+| `fechar_dia(dia, semana)` | agrega, grava e devolve a linha de cada pessoa |
 | `adesao(desde, ate)` | dias com log, dias com o mínimo e tempo, por pessoa |
+| `materias(prefixo)` | matérias já usadas, da mais frequente para a menos |
 | `gravar_snapshot_anki` / `gravar_dificeis` | escrita vinda do `anki_sync` |
 | `anki_ultimo_snapshot` / `anki_revisados` / `anki_top_dificeis` | leitura para relatório e `/anki` |
 | `confirmar_marco` / `marcos_confirmados` / `vincular_mensagem` / `marcos_da_mensagem` | marcos |
 | `migrar_estado_json(caminho)` | importa o `estado.json` da primeira versão |
 
-`adesao()` e `aulas_por_pessoa()` estão prontas e ainda não têm comando que as
-use. São a base natural de um `/adesao`.
+`aulas_por_pessoa()` está pronta e ainda não tem comando que a use.
 
 ## Backup
 

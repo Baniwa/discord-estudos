@@ -31,6 +31,8 @@ cada 30 minutos.
 Alternativa sem comando: mensagem em `#erros-do-dia` no formato
 `[matéria] frente :: verso`. Depende da intent MESSAGE CONTENT.
 
+`materia` tem autocomplete (ver abaixo).
+
 ### `/questoes materia feitas acertos`
 
 | Parâmetro | Tipo | Obrigatório |
@@ -58,6 +60,18 @@ confirmação volta em ephemeral e o registro fica só em `#aulas`.
 
 Aula é consumo, questão é produção. O relatório mantém os dois separados de
 propósito, e avisa quando a semana teve muita aula e pouca questão.
+
+### Autocomplete de matéria
+
+`/erro`, `/questoes` (parâmetro `materia`) e `/aula` (parâmetro `disciplina`)
+sugerem o que já foi registrado antes, da matéria mais usada para a menos, no
+máximo 25 opções. Vem de `db.materias()`, que junta questões, cards e aulas.
+
+Não é lista fechada: matéria nova continua sendo aceita digitando. A sugestão
+existe para que nome novo só nasça quando não há nenhum parecido. Tudo é gravado
+em minúscula, mas isso sozinho não resolvia "adm" contra "administrativo", e a
+matéria fragmentada estraga justamente o ranking da pior matéria, que é o que
+pauta a semana.
 
 ### `/questoes` e `/aula` no mesmo dia
 
@@ -90,6 +104,39 @@ questões até a prova.
 
 A linha que importa é a matéria no topo da lista de piores. É ela que pauta a
 semana seguinte.
+
+### `/hoje`
+
+Sem parâmetros. O log do dia corrente, montado na hora e **sem gravar**: usa
+`db.agregar_dia()`, que é o `fechar_dia()` sem a escrita.
+
+Existe porque o fechamento oficial só sai às 02h, quando não dá mais para
+reagir. Às 21h ainda dá.
+
+Dia vazio aqui sai em amarelo, não em vermelho. Às 10h da manhã não ter registro
+não é fracasso, é cedo.
+
+### `/bloco quando`
+
+| Parâmetro | Escolhas | Padrão |
+|---|---|---|
+| `quando` | hoje, amanhã | hoje |
+
+O que estudar segundo o plano de 14 semanas: rótulo da semana, conteúdo,
+horário e estrutura do bloco. Mesmo embed que a tarefa das 17h45 publica.
+
+O aviso automático chega 15 minutos antes do bloco e some no meio do canal.
+Este comando puxa de novo a qualquer hora, e o `amanhã` serve para fechar a
+noite já sabendo o que abre o dia seguinte.
+
+### `/adesao`
+
+Sem parâmetros. Dias com o mínimo por semana do plano, das 8 semanas mais
+recentes, com a semana corrente marcada por ▶, mais o acumulado desde o começo.
+
+É a pergunta que o `log_diario` foi criado para responder: cumpriu 9 dos 14 dias
+da S1. Lê de `db.adesao()`, ou seja, dos dias **já fechados**. O dia de hoje
+entra no fechamento das 02h, e o rodapé do embed diz isso.
 
 ### `/prazos`
 
