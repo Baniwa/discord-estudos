@@ -201,6 +201,7 @@ O código não leva comentário. O "porquê" de cada decisão mora aqui.
 | [docs/COMANDOS.md](docs/COMANDOS.md) | todo comando, parâmetro, validação, evento e tarefa |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | módulos, ciclo de vida, os cinco loops e as armadilhas que já custaram bug |
 | [docs/BANCO.md](docs/BANCO.md) | tabela por tabela, migrações e a API do `db.py` |
+| [docs/TESTES.md](docs/TESTES.md) | como rodar, o que a suíte garante e como escrever mais |
 | [DEPLOY.md](DEPLOY.md) | subir e manter no ar |
 
 Mudou comportamento, muda o documento no mesmo commit. Documento que descreve

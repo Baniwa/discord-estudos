@@ -246,7 +246,8 @@ def fechar_orfas(con, preservar: set[int] | None = None) -> int:
     preservar = preservar or set()
     abertas = con.execute(
         "SELECT id, inicio, usuario_id FROM sessoes_voz WHERE fim IS NULL").fetchall()
-    abertas = [l for l in abertas if l["usuario_id"] not in preservar]
+    abertas = [linha for linha in abertas
+               if linha["usuario_id"] not in preservar]
     for linha in abertas:
         inicio = datetime.fromisoformat(linha["inicio"])
         # Teto de 4h: sessao aberta alem disso quase certamente e o bot que caiu.
@@ -349,7 +350,7 @@ def streak(con, usuario_id: int) -> tuple[int, int]:
         return 0, 0
 
     melhor = atual = 1
-    for anterior, seguinte in zip(dias, dias[1:]):
+    for anterior, seguinte in zip(dias, dias[1:], strict=False):
         atual = atual + 1 if (seguinte - anterior).days == 1 else 1
         melhor = max(melhor, atual)
 
@@ -511,8 +512,8 @@ def gravar_snapshot_anki(con, linhas: list[dict]) -> None:
         "INSERT OR REPLACE INTO anki_snapshot"
         " (dia, deck, novos, aprender, revisar, revisados_hoje, colhido_em)"
         " VALUES (?,?,?,?,?,?,?)",
-        [(hoje(), l["deck"], l["novos"], l["aprender"], l["revisar"],
-          l["revisados_hoje"], agora) for l in linhas])
+        [(hoje(), linha["deck"], linha["novos"], linha["aprender"],
+          linha["revisar"], linha["revisados_hoje"], agora) for linha in linhas])
     con.commit()
 
 
