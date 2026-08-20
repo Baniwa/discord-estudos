@@ -45,7 +45,8 @@ nano .env
 ```
 
 Preencher `DISCORD_BOT_TOKEN`. O `DISCORD_GUILD_ID` é opcional, mas na VM vale
-preencher com `1074849674860703835` para não depender da descoberta automática.
+preencher para não depender da descoberta automática: clique com o botão direito
+no nome do servidor e copie o ID, com o modo desenvolvedor ligado.
 
 **O `.env` não está no git e nunca deve entrar.** Digite o token direto na VM.
 
