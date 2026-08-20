@@ -1,21 +1,11 @@
 """Sentinela — bot do servidor de estudos.
 
-Faz quatro coisas:
-
   1. Cobra prazo de edital, com escalada e confirmacao por reacao.
   2. Cronometra sozinho o tempo em call na SALA DE ESTUDO. Isto e o que
      sustenta os relatorios: dado que ninguem precisa lembrar de digitar.
   3. Conta os erros lancados em #erros-do-dia.
   4. Fecha relatorio semanal e sob demanda.
-
-O ponto de desenho: o unico numero em que da para confiar e o que o bot mede
-sozinho. Relatorio feito so de auto-declaracao mede disciplina de preencher
-formulario, nao estudo.
-
-Uso:
-    python sentinela.py
 """
-
 import json
 import os
 import sys
@@ -38,7 +28,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import anki_sync  # noqa: E402
 import db  # noqa: E402
-from config.agenda import MINIMO, bloco_do_dia  # noqa: E402
+from config.agenda import MINIMO, SEMANAS, bloco_do_dia  # noqa: E402
 
 CONFIG = json.loads((RAIZ / "config" / "marcos.json").read_text(encoding="utf-8"))
 TZ = ZoneInfo(CONFIG["timezone"])
@@ -51,19 +41,14 @@ CARGO_ALVO = "⚔️ Maidens"
 CANAL_BOAS_VINDAS = "🤙🏽┇boas-vindas"
 CANAL_METAS = "metas-do-dia"
 CANAL_AULAS = "aulas"
+CANAL_SIMULADOS = "simulados"
+SALA_SIMULADO = "🧪 Simulado"
 
 HORA_BRIEFING = time(hour=7, minute=0, tzinfo=TZ)
-# O bloco muda de horario no fim de semana: 18h nos dias uteis, 09h30 no
-# sabado e no domingo. Um aviso unico as 17h45 chegava DEPOIS do bloco de
-# sabado ter passado, o que e pior que nao avisar.
 HORA_BLOCO_SEMANA = time(hour=17, minute=45, tzinfo=TZ)
 HORA_BLOCO_FDS = time(hour=9, minute=15, tzinfo=TZ)
-# Fecha as 02h o dia ANTERIOR, nao as 22h30 o dia corrente. O padrao dela e
-# estudar ate tarde, com sessao atravessando a meia-noite (esta registrado
-# no cofre). Fechando as 22h30, tudo que acontece depois ficava fora do log
-# do proprio dia, justamente nas noites em que ela mais produz.
 HORA_LOG = time(hour=2, minute=0, tzinfo=TZ)
-HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)   # domingo
+HORA_RELATORIO = time(hour=20, minute=0, tzinfo=TZ)
 
 DATA_PROVA = datetime(2026, 11, 22, tzinfo=TZ)
 DIAS_SEMANA = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
@@ -228,13 +213,22 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
                           "A prova é de questão, não de aula.")
         else:
             alerta = "\n⚠️ **Nenhuma questão registrada no período.**"
-        # Aula e call medem coisas diferentes e PODEM se sobrepor: assistir
-        # dentro da sala de voz conta nas duas. Sem esta nota, quem le
-        # "2h em call" e "2h de aula" soma 4h, que nunca aconteceram.
-        rodape = ("\n\n*Minutos de aula e tempo em call medem coisas diferentes e podem se sobrepor. Não somam.*")
+        rodape = ("\n\n*Minutos de aula e tempo em call medem coisas diferentes "
+                  "e podem se sobrepor. Não somam.*")
         em.add_field(name=f"🎧 Aulas — {total_min} min",
                      value="\n".join(linhas) + alerta + rodape,
                      inline=False)
+
+    # 2c. Simulado. Nota sob pressao, que nao se mistura com questao treinada.
+    provas = db.simulados_periodo(con, desde, ate)
+    if provas:
+        linhas = []
+        for p in provas[:6]:
+            pct = 100 * p["acertos"] / p["total"] if p["total"] else 0
+            sinal = "🟢" if pct >= 70 else "🟡" if pct >= 60 else "🔴"
+            linhas.append(f"{sinal} `{p['materia']:<16}` {p['acertos']}/{p['total']}"
+                          f" = {pct:.0f}% · {p['dia'][8:10]}/{p['dia'][5:7]}")
+        em.add_field(name="🧪 Simulados", value="\n".join(linhas), inline=False)
 
     # 3. Anki. O que ela errou de novo, que e o unico sinal que muda a semana.
     revisados = db.anki_revisados(con, desde, ate)
@@ -280,31 +274,114 @@ def montar_relatorio(dias: int, titulo: str) -> discord.Embed:
     return em
 
 
+# ----------------------------------------------------------------- simulados
+
+def avisos_pendentes(minutos: int, restante: float, enviados: set[str]) -> list[str]:
+    """As marcas que já venceram e ainda não foram anunciadas, da mais folgada
+    para a mais urgente."""
+    marcas = []
+    if minutos > 90:
+        marcas.append(("metade", minutos / 2))
+    marcas += [("30", 30), ("10", 10)]
+
+    return [nome for nome, limite in marcas
+            if limite < minutos and restante <= limite and nome not in enviados]
+
+
+def texto_do_aviso(marca: str, nome: str, materia: str) -> str:
+    if marca == "metade":
+        return (f"⏳ **{nome}** — metade do simulado de {materia}. "
+                f"Se travou numa questão, pula e volta depois.")
+    if marca == "30":
+        return (f"⏳ **{nome}** — 30 minutos. "
+                f"Hora de fechar o que está aberto, não de começar bloco novo.")
+    return f"⏰ **{nome}** — 10 minutos. Transfira o gabarito agora."
+
+
+def montar_simulado(materia: str, minutos: int, fim: datetime,
+                    sala) -> discord.Embed:
+    em = discord.Embed(
+        title=f"Simulado de {materia}",
+        description=f"Começou agora, {minutos} minutos.",
+        colour=0xEB459E)
+    em.add_field(name="Termina",
+                 value=f"<t:{int(fim.timestamp())}:t> · <t:{int(fim.timestamp())}:R>",
+                 inline=False)
+    em.add_field(
+        name="Onde",
+        value=(f"{sala.mention} — mic e câmera off, cronômetro por minha conta."
+               if sala else
+               f"Sem a sala `{SALA_SIMULADO}` no servidor. "
+               f"Vale qualquer canal de {CATEGORIA_ESTUDO}."),
+        inline=False)
+    em.set_footer(text="Aviso na metade, aos 30 e aos 10. "
+                       "No fim, lance a nota com /resultado.")
+    return em
+
+
+# ------------------------------------------------------------------- adesao
+
+def montar_adesao() -> discord.Embed:
+    hoje = datetime.now(TZ).date()
+    em = discord.Embed(title="Adesão ao plano", colour=0x5865F2)
+
+    comecadas = [(inicio, fim, rotulo) for inicio, fim, rotulo, _ in SEMANAS
+                 if inicio <= hoje]
+    if not comecadas:
+        em.description = ("O plano começa em "
+                          f"{SEMANAS[0][0]:%d/%m/%Y}. Nada a cobrar ainda.")
+        return em
+
+    linhas = []
+    for inicio, fim, rotulo in comecadas[-8:]:
+        ate = min(fim, hoje)
+        dias = (ate - inicio).days + 1
+        pessoas = db.adesao(con, inicio.isoformat(), ate.isoformat())
+        corpo = " · ".join(f"{p['usuario']} **{p['dias_com_minimo'] or 0}**/{dias}"
+                           for p in pessoas) or f"ninguém — 0/{dias}"
+        marca = "▶" if fim >= hoje else "　"
+        linhas.append(f"{marca} `{rotulo.split(' — ')[0]:<7}` {corpo}")
+
+    em.add_field(name="Dias com o mínimo, por semana do plano",
+                 value="\n".join(linhas), inline=False)
+
+    inicio_plano = SEMANAS[0][0]
+    dias_plano = (hoje - inicio_plano).days + 1
+    geral = db.adesao(con, inicio_plano.isoformat(), hoje.isoformat())
+    if geral:
+        em.add_field(
+            name="No plano inteiro",
+            value="\n".join(
+                f"**{p['usuario']}** — {p['dias_com_minimo'] or 0}/{dias_plano} dias "
+                f"com o mínimo · {p['dias_com_log'] or 0} com algum registro · "
+                f"{hm(p['s'] or 0)} em call"
+                for p in geral),
+            inline=False)
+
+    em.set_footer(text="Conta os dias já fechados. O de hoje entra no "
+                       "fechamento das 02h.")
+    return em
+
+
 # --------------------------------------------------------------------- bot
 
 class Sentinela(discord.Client):
     def __init__(self):
-        intents = discord.Intents.default()   # ja inclui voice_states e reactions
-        intents.members = True                # privilegiada: para dar boas-vindas
+        intents = discord.Intents.default()
+        intents.members = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # As sessoes orfas NAO sao fechadas aqui: quem ainda esta na call
-        # continua estudando, e fechar cegamente picava a sessao dela em
-        # pedacos a cada restart meu. O tratamento certo precisa saber quem
-        # esta em call, e isso so existe no on_ready.
         db.migrar_estado_json(con, RAIZ / "estado.json")
         briefing_diario.start()
         aviso_do_bloco.start()
         relatorio_semanal.start()
         fechamento_diario.start()
         ler_anki.start()
+        vigiar_simulados.start()
 
     async def on_ready(self):
-        # O sync dos comandos NAO pode ir no setup_hook: la o cache de guilds
-        # ainda esta vazio, e usar o GUILD_ID cru quebra se o .env estiver com
-        # a application id. Aqui a guild ja esta resolvida de verdade.
         global GUILD_ID
         g = guild_alvo(self)
         if g is None:
@@ -319,8 +396,6 @@ class Sentinela(discord.Client):
             self._comandos_sincronizados = True
             print(f"Comandos sincronizados em {g.name}.")
 
-        # Quem esta em call agora mantem a sessao aberta, sem fechar e reabrir:
-        # do contrario cada restart picava uma sessao unica em varias.
         em_call = set()
         for canal in g.voice_channels:
             if canal.category and canal.category.name == CATEGORIA_ESTUDO:
@@ -338,8 +413,6 @@ class Sentinela(discord.Client):
 
 
 def guild_alvo(cliente: discord.Client):
-    """A guild em que o bot opera. Aceita GUILD_ID vazio ou errado: com o bot
-    em um servidor so, nao ha ambiguidade."""
     if GUILD_ID and GUILD_ID != cliente.user.id:
         g = cliente.get_guild(GUILD_ID)
         if g:
@@ -363,8 +436,6 @@ def e_canal_de_estudo(canal) -> bool:
 
 @bot.event
 async def on_member_join(membro: discord.Member):
-    """Boas-vindas. Curto de proposito: as tres coisas que a pessoa precisa
-    fazer, e nao um tour pelos 15 canais."""
     if membro.bot:
         return
     canal = canal_por_nome(CANAL_BOAS_VINDAS)
@@ -414,13 +485,6 @@ async def on_voice_state_update(membro, antes, depois):
 
 @bot.event
 async def on_message(msg: discord.Message):
-    """Erro lancado em #erros-do-dia.
-
-    Sem a intent message_content, `msg.content` vem VAZIO: da para contar que
-    houve um erro, mas nao para montar o card. Entao:
-      - com a intent ligada, a convencao `pergunta :: resposta` vira card;
-      - sem ela, conta o erro e avisa que o card so sai pelo /erro.
-    """
     if msg.author.bot or not msg.guild:
         return
     if getattr(msg.channel, "name", None) != CANAL_ERROS:
@@ -489,45 +553,35 @@ async def briefing_diario():
             db.vincular_mensagem(con, msg.id, m["id"])
 
 
+def montar_bloco(dia, titulo: str) -> discord.Embed:
+    b = bloco_do_dia(dia)
+    em = discord.Embed(
+        title=f"{titulo} — {b['hora']}",
+        description=f"**{b['rotulo']}**\n{b['conteudo']}",
+        colour=0xFEE75C)
+    em.add_field(name="Estrutura", value=b["estrutura"], inline=False)
+    em.set_footer(text=f"{MINIMO}  ·  prova em "
+                       f"{(DATA_PROVA.date() - dia).days} dias")
+    return em
+
+
 @tasks.loop(time=[HORA_BLOCO_SEMANA, HORA_BLOCO_FDS])
 async def aviso_do_bloco():
-    """15 min antes do bloco, diz o que estudar hoje. Sem isto, o comeco do
-    bloco vira decisao, e decisao no fim do dia e onde o plano se perde."""
     agora = datetime.now(TZ)
     fim_de_semana = agora.weekday() >= 5
-    # Dispara nos dois horarios; so publica no que corresponde ao dia.
     if fim_de_semana != (agora.hour < 12):
         return
 
     canal = canal_por_nome(CANAL_METAS)
     if canal is None:
         return
-    hoje = agora.date()
-    b = bloco_do_dia(hoje)
 
-    em = discord.Embed(
-        title=f"Bloco de hoje — {b['hora']}",
-        description=f"**{b['rotulo']}**\n{b['conteudo']}",
-        colour=0xFEE75C)
-    em.add_field(name="Estrutura", value=b["estrutura"], inline=False)
-    em.set_footer(text=f"{MINIMO}  ·  prova em "
-                       f"{(DATA_PROVA.date() - hoje).days} dias")
-
+    em = montar_bloco(agora.date(), "Bloco de hoje")
     cargo = discord.utils.get(canal.guild.roles, name=CARGO_ALVO)
     await canal.send(content=cargo.mention if cargo else None, embed=em)
 
 
 def _sincronizar_anki_isolado() -> dict:
-    """Entrega a fila E fotografa a colecao, nesta ordem.
-
-    Roda numa thread separada, entao PRECISA da propria conexao: objeto SQLite
-    pertence a thread que o criou. Passar a conexao global daqui levantou
-    ProgrammingError na primeira subida. O WAL cuida da concorrencia.
-
-    A entrega mora aqui, e nao so no anki_sync.py, porque senao o card ficava
-    esperando alguem lembrar de rodar um script na mao - e a promessa e que
-    /erro faz o card aparecer sozinho.
-    """
     c = db.conectar()
     try:
         pendentes = db.cards_pendentes(c)
@@ -540,8 +594,6 @@ def _sincronizar_anki_isolado() -> dict:
 
 @tasks.loop(minutes=30)
 async def ler_anki():
-    """Fotografa o Anki quando ele estiver aberto. Silencioso de proposito:
-    Anki fechado e o estado normal, nao um erro que mereca aviso."""
     import asyncio
     try:
         if not await asyncio.to_thread(anki_sync.anki_disponivel):
@@ -561,21 +613,29 @@ async def ler_anki():
         print(f"Anki: falha ({e}). A fila fica intacta, tento de novo em 30 min.")
 
 
-def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
+def montar_log_diario(dia, pessoas: list[dict], parcial: bool = False) -> discord.Embed:
     b = bloco_do_dia(dia)
     houve = [p for p in pessoas
              if p["segundos_voz"] or p["questoes"] or p["erros"] or p["aulas"]]
 
+    if parcial:
+        vazio = 0xFEE75C
+        titulo = f"Hoje, até agora — {DIAS_SEMANA[dia.weekday()]}"
+    else:
+        vazio = 0xED4245
+        titulo = f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}"
+
     em = discord.Embed(
-        title=f"Log de {dia:%d/%m/%Y} — {DIAS_SEMANA[dia.weekday()]}",
+        title=titulo,
         description=f"**{b['rotulo']}** · bloco previsto {b['hora']}",
-        colour=0x57F287 if houve else 0xED4245)
+        colour=0x57F287 if houve else vazio)
 
     if not houve:
         em.add_field(
-            name="🔴 Dia sem registro",
+            name="⚪ Ainda sem registro" if parcial else "🔴 Dia sem registro",
             value="Nenhuma call, nenhuma questão, nenhum erro.\n"
-                  "*O que estava previsto:* " + b["conteudo"][:220],
+                  + ("*O que está previsto:* " if parcial else "*O que estava previsto:* ")
+                  + b["conteudo"][:220],
             inline=False)
         em.set_footer(text=MINIMO)
         return em
@@ -602,8 +662,6 @@ def montar_log_diario(dia, pessoas: list[dict]) -> discord.Embed:
 
 @tasks.loop(time=HORA_LOG)
 async def fechamento_diario():
-    """Fecha o dia e grava. E o log que amarra o que aconteceu ao que o
-    calendario mandava estudar - sem isso, tempo em call vira numero solto."""
     dia = datetime.now(TZ).date() - timedelta(days=1)   # fecha o dia que passou
     semana = bloco_do_dia(dia)["rotulo"]
     pessoas = db.fechar_dia(con, dia.isoformat(), semana)
@@ -611,6 +669,35 @@ async def fechamento_diario():
     canal = canal_por_nome("diario")
     if canal:
         await canal.send(embed=montar_log_diario(dia, pessoas))
+
+
+@tasks.loop(minutes=1)
+async def vigiar_simulados():
+    agora = datetime.now(TZ)
+    for s in db.simulados_abertos(con):
+        canal = bot.get_channel(s["canal_id"]) if s["canal_id"] else None
+        canal = canal or canal_por_nome(CANAL_SIMULADOS)
+        restante = (datetime.fromisoformat(s["fim_previsto"]) - agora).total_seconds() / 60
+
+        if restante <= 0:
+            db.encerrar_simulado(con, s["id"])
+            if canal:
+                await canal.send(
+                    f"🏁 **{s['usuario']}** — acabou o tempo do simulado de "
+                    f"**{s['materia']}**.\n"
+                    f"Corrija agora, enquanto lembra por que marcou. "
+                    f"A nota entra com `/resultado`, e cada erro com `/erro`.")
+            continue
+
+        pendentes = avisos_pendentes(
+            s["minutos"], restante, {m for m in s["avisos"].split(",") if m})
+        if not pendentes:
+            continue
+
+        db.marcar_aviso(con, s["id"], pendentes)
+        if canal:
+            await canal.send(
+                texto_do_aviso(pendentes[-1], s["usuario"], s["materia"]))
 
 
 @tasks.loop(time=HORA_RELATORIO)
@@ -627,11 +714,17 @@ async def relatorio_semanal():
 @relatorio_semanal.before_loop
 @fechamento_diario.before_loop
 @ler_anki.before_loop
+@vigiar_simulados.before_loop
 async def antes():
     await bot.wait_until_ready()
 
 
 # ----------------------------------------------------------------- comandos
+
+async def sugerir_materia(i: discord.Interaction, atual: str):
+    return [app_commands.Choice(name=nome, value=nome)
+            for nome in db.materias(con, atual)]
+
 
 @bot.tree.command(name="prazos", description="Contagem regressiva dos editais")
 async def cmd_prazos(i: discord.Interaction):
@@ -680,15 +773,13 @@ async def cmd_estudei(i: discord.Interaction):
 
 
 @bot.tree.command(name="erro", description="Lança um erro e já vira card do Anki")
+@app_commands.autocomplete(materia=sugerir_materia)
 @app_commands.describe(materia="Matéria", pergunta="A frente do card",
                        resposta="O verso: o que é certo, e por quê")
 async def cmd_erro(i: discord.Interaction, materia: str, pergunta: str, resposta: str):
     card_id = db.enfileirar_card(con, i.user.id, i.user.display_name,
                                  materia, pergunta, resposta, fonte="/erro")
     pend = len(db.cards_pendentes(con))
-    # None, nao 0: mensagem_id e UNIQUE, e o SQLite aceita varios NULL mas so
-    # um 0. Com `card_id or 0`, o segundo /erro do dia que caisse em duplicata
-    # era engolido pelo INSERT OR IGNORE e sumia da contagem.
     db.registrar_erro(con, i.user.id, i.user.display_name, card_id)
 
     await i.response.send_message(
@@ -741,6 +832,7 @@ async def cmd_anki(i: discord.Interaction):
 
 
 @bot.tree.command(name="aula", description="Registra uma aula assistida")
+@app_commands.autocomplete(disciplina=sugerir_materia)
 @app_commands.describe(
     disciplina="Matéria da aula",
     aula="Qual aula (número e título)",
@@ -780,6 +872,7 @@ async def cmd_aula(i: discord.Interaction, disciplina: str, aula: str, minutos: 
 
 
 @bot.tree.command(name="questoes", description="Registra questões feitas")
+@app_commands.autocomplete(materia=sugerir_materia)
 @app_commands.describe(materia="Matéria", feitas="Quantas", acertos="Quantas certas")
 async def cmd_questoes(i: discord.Interaction, materia: str, feitas: int, acertos: int):
     if feitas <= 0 or not 0 <= acertos <= feitas:
@@ -794,6 +887,88 @@ async def cmd_questoes(i: discord.Interaction, materia: str, feitas: int, acerto
     await i.response.send_message(
         f"**{materia}** — {acertos}/{feitas} = **{pct:.0f}%**{alerta}\n"
         f"Os erros vão para **#{CANAL_ERROS}** e viram card no Anki.")
+
+
+@bot.tree.command(name="simulado", description="Abre a janela de simulado, com tempo")
+@app_commands.autocomplete(materia=sugerir_materia)
+@app_commands.describe(materia="Matéria ou banca do simulado",
+                       duracao="Duração em minutos (padrão 210, a prova do TCDF)")
+async def cmd_simulado(i: discord.Interaction, materia: str,
+                       duracao: app_commands.Range[int, 15, 360] = 210):
+    aberto = db.simulado_aberto_de(con, i.user.id)
+    if aberto:
+        fim = datetime.fromisoformat(aberto["fim_previsto"])
+        await i.response.send_message(
+            f"Você já tem um simulado de **{aberto['materia']}** correndo, "
+            f"termina <t:{int(fim.timestamp())}:R>. Feche com `/resultado`.",
+            ephemeral=True)
+        return
+
+    simulado = db.abrir_simulado(con, i.user.id, i.user.display_name, materia, duracao)
+    fim = datetime.now(TZ) + timedelta(minutes=duracao)
+    sala = discord.utils.get(i.guild.voice_channels, name=SALA_SIMULADO)
+    em = montar_simulado(materia.lower().strip(), duracao, fim, sala)
+
+    canal = canal_por_nome(CANAL_SIMULADOS)
+    if canal and canal.id != i.channel_id:
+        msg = await canal.send(content=i.user.mention, embed=em)
+        await i.response.send_message(f"Correndo em {canal.mention}.", ephemeral=True)
+    else:
+        await i.response.send_message(embed=em)
+        msg = await i.original_response()
+
+    db.anotar_mensagem_do_simulado(con, simulado, msg.channel.id, msg.id)
+
+
+@bot.tree.command(name="resultado", description="Lança a nota do simulado")
+@app_commands.describe(acertos="Quantas certas", total="Quantas questões tinha")
+async def cmd_resultado(i: discord.Interaction, acertos: int, total: int):
+    if total <= 0 or not 0 <= acertos <= total:
+        await i.response.send_message(
+            "Números inconsistentes: acertos tem que estar entre 0 e total.",
+            ephemeral=True)
+        return
+
+    simulado = db.simulado_sem_resultado(con, i.user.id)
+    if simulado is None:
+        await i.response.send_message(
+            "Não achei simulado seu esperando nota. Abra com `/simulado`, ou "
+            "use `/questoes` se foi ciclo de questões, não prova.", ephemeral=True)
+        return
+
+    db.registrar_resultado(con, simulado["id"], acertos, total)
+    pct = 100 * acertos / total
+    sinal = "🟢" if pct >= 70 else "🟡" if pct >= 60 else "🔴"
+    await i.response.send_message(
+        f"{sinal} **{simulado['materia']}** — {acertos}/{total} = **{pct:.0f}%** "
+        f"em {simulado['minutos']} min.\n"
+        f"Nota de simulado não entra no ciclo de questões: ela mede prova, não "
+        f"treino. Cada erro vira card com `/erro`.")
+
+
+@bot.tree.command(name="bloco", description="O que estudar hoje, segundo o plano")
+@app_commands.describe(quando="Hoje ou amanhã")
+@app_commands.choices(quando=[
+    app_commands.Choice(name="hoje", value=0),
+    app_commands.Choice(name="amanhã", value=1),
+])
+async def cmd_bloco(i: discord.Interaction, quando: int = 0):
+    dia = datetime.now(TZ).date() + timedelta(days=quando)
+    await i.response.send_message(
+        embed=montar_bloco(dia, "Bloco de amanhã" if quando else "Bloco de hoje"))
+
+
+@bot.tree.command(name="hoje", description="O dia até agora, antes do fechamento das 02h")
+async def cmd_hoje(i: discord.Interaction):
+    dia = datetime.now(TZ).date()
+    await i.response.send_message(
+        embed=montar_log_diario(dia, db.agregar_dia(con, dia.isoformat()),
+                                parcial=True))
+
+
+@bot.tree.command(name="adesao", description="Quantos dias de cada semana do plano foram cumpridos")
+async def cmd_adesao(i: discord.Interaction):
+    await i.response.send_message(embed=montar_adesao())
 
 
 if __name__ == "__main__":

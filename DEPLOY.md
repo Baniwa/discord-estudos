@@ -1,7 +1,7 @@
 # Subir o bot numa VM
 
-O bot precisa ficar de pé 24 horas. Enquanto ele roda no meu PC, o cronômetro
-de call para quando eu desligo a máquina, e o briefing das 7h não sai.
+O bot precisa ficar de pé 24 horas. Rodando na máquina de casa, o cronômetro
+de call para quando ela desliga, e o briefing das 7h não sai.
 
 ## Onde
 
@@ -45,7 +45,8 @@ nano .env
 ```
 
 Preencher `DISCORD_BOT_TOKEN`. O `DISCORD_GUILD_ID` é opcional, mas na VM vale
-preencher com `1074849674860703835` para não depender da descoberta automática.
+preencher para não depender da descoberta automática: clique com o botão direito
+no nome do servidor e copie o ID, com o modo desenvolvedor ligado.
 
 **O `.env` não está no git e nunca deve entrar.** Digite o token direto na VM.
 
@@ -85,7 +86,7 @@ consistente mesmo com o bot escrevendo.
 
 ## O problema do Anki, e ele é real
 
-**O AnkiConnect só escuta em `127.0.0.1`.** Enquanto o bot roda no meu PC, os
+**O AnkiConnect só escuta em `127.0.0.1`.** Enquanto o bot roda na mesma máquina do Anki, os
 dois se falam direto. Com o bot na VM isso deixa de funcionar:
 
 - `/erro` continua enfileirando card no banco, sem perder nada;
@@ -101,7 +102,7 @@ funciona igual.
 banco que interessa está na VM, e trazer cópia para cá desatualiza o original.
 
 **B. Ponte HTTP.** O bot na VM expõe a fila de cards num endpoint autenticado, e
-um agente pequeno no meu PC puxa, entrega ao Anki e devolve a estatística. É a
+um agente pequeno na máquina do Anki puxa, entrega ao Anki e devolve a estatística. É a
 solução certa, e usa o `aiohttp` que já vem com o discord.py, sem dependência
 nova. **Ainda não está implementada.**
 

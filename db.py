@@ -144,6 +144,28 @@ CREATE TABLE IF NOT EXISTS log_diario (
     PRIMARY KEY (dia, usuario_id)
 );
 
+-- Janela de simulado. Fica no banco, e nao em memoria, para o cronometro
+-- sobreviver a restart: simulado de 3h30 nao pode depender de o processo ficar
+-- de pe o tempo todo. `avisos` guarda as marcas ja anunciadas, entao subir de
+-- novo no meio nao repete o aviso dos 30 minutos.
+CREATE TABLE IF NOT EXISTS simulados (
+    id           INTEGER PRIMARY KEY,
+    usuario_id   INTEGER NOT NULL,
+    usuario      TEXT    NOT NULL,
+    dia          TEXT    NOT NULL,
+    materia      TEXT    NOT NULL,
+    minutos      INTEGER NOT NULL,
+    inicio       TEXT    NOT NULL,
+    fim_previsto TEXT    NOT NULL,
+    canal_id     INTEGER,
+    mensagem_id  INTEGER,
+    avisos       TEXT    NOT NULL DEFAULT '',
+    encerrado_em TEXT,
+    acertos      INTEGER,
+    total        INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_simulados_aberto ON simulados(encerrado_em);
+
 CREATE TABLE IF NOT EXISTS confirmacoes (
     marco_id    TEXT PRIMARY KEY,
     usuario_id  INTEGER,
@@ -246,7 +268,8 @@ def fechar_orfas(con, preservar: set[int] | None = None) -> int:
     preservar = preservar or set()
     abertas = con.execute(
         "SELECT id, inicio, usuario_id FROM sessoes_voz WHERE fim IS NULL").fetchall()
-    abertas = [l for l in abertas if l["usuario_id"] not in preservar]
+    abertas = [linha for linha in abertas
+               if linha["usuario_id"] not in preservar]
     for linha in abertas:
         inicio = datetime.fromisoformat(linha["inicio"])
         # Teto de 4h: sessao aberta alem disso quase certamente e o bot que caiu.
@@ -349,7 +372,7 @@ def streak(con, usuario_id: int) -> tuple[int, int]:
         return 0, 0
 
     melhor = atual = 1
-    for anterior, seguinte in zip(dias, dias[1:]):
+    for anterior, seguinte in zip(dias, dias[1:], strict=False):
         atual = atual + 1 if (seguinte - anterior).days == 1 else 1
         melhor = max(melhor, atual)
 
@@ -420,9 +443,9 @@ def aulas_por_pessoa(con, desde: str, ate: str):
         (desde, ate)).fetchall()
 
 
-def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
-    """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
-    dia recalcula em vez de duplicar."""
+def agregar_dia(con, dia: str) -> list[dict]:
+    """O dia por pessoa, sem gravar. Serve ao dia corrente, que ainda nao
+    fechou."""
     pessoas: dict[int, dict] = {}
 
     def slot(uid, nome):
@@ -463,6 +486,13 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
             "SELECT usuario_id, usuario FROM minimos WHERE dia=?", (dia,)):
         slot(r["usuario_id"], r["usuario"])["minimo"] = 1
 
+    return list(pessoas.values())
+
+
+def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
+    """Consolida o dia por pessoa e grava. Idempotente: rodar de novo no mesmo
+    dia recalcula em vez de duplicar."""
+    pessoas = agregar_dia(con, dia)
     agora = datetime.now(TZ).isoformat()
     con.executemany(
         "INSERT OR REPLACE INTO log_diario (dia, usuario_id, usuario, semana,"
@@ -471,9 +501,90 @@ def fechar_dia(con, dia: str, semana: str | None) -> list[dict]:
         [(dia, p["usuario_id"], p["usuario"], semana, p["segundos_voz"],
           p["questoes"], p["acertos"], p["erros"], p["cards"], p["aulas"],
           p["minutos_aula"], p["minimo"], agora)
-         for p in pessoas.values()])
+         for p in pessoas])
     con.commit()
-    return list(pessoas.values())
+    return pessoas
+
+
+# ----------------------------------------------------------------- simulados
+
+def abrir_simulado(con, usuario_id, usuario, materia, minutos) -> int:
+    agora = datetime.now(TZ)
+    cur = con.execute(
+        "INSERT INTO simulados (usuario_id, usuario, dia, materia, minutos,"
+        " inicio, fim_previsto) VALUES (?,?,?,?,?,?,?)",
+        (usuario_id, usuario, hoje(), materia.lower().strip(), minutos,
+         agora.isoformat(), (agora + timedelta(minutes=minutos)).isoformat()))
+    con.commit()
+    return cur.lastrowid
+
+
+def anotar_mensagem_do_simulado(con, simulado_id, canal_id, mensagem_id) -> None:
+    con.execute("UPDATE simulados SET canal_id=?, mensagem_id=? WHERE id=?",
+                (canal_id, mensagem_id, simulado_id))
+    con.commit()
+
+
+def simulados_abertos(con) -> list:
+    return con.execute(
+        "SELECT * FROM simulados WHERE encerrado_em IS NULL ORDER BY id").fetchall()
+
+
+def simulado_aberto_de(con, usuario_id: int):
+    return con.execute(
+        "SELECT * FROM simulados WHERE usuario_id=? AND encerrado_em IS NULL"
+        " ORDER BY id DESC", (usuario_id,)).fetchone()
+
+
+def marcar_aviso(con, simulado_id: int, marcas: list[str]) -> None:
+    """Guarda as marcas ja anunciadas. Restart no meio nao repete aviso."""
+    atual = con.execute("SELECT avisos FROM simulados WHERE id=?",
+                        (simulado_id,)).fetchone()["avisos"]
+    juntas = [m for m in atual.split(",") if m] + [m for m in marcas if m]
+    con.execute("UPDATE simulados SET avisos=? WHERE id=?",
+                (",".join(dict.fromkeys(juntas)), simulado_id))
+    con.commit()
+
+
+def encerrar_simulado(con, simulado_id: int) -> None:
+    con.execute(
+        "UPDATE simulados SET encerrado_em=? WHERE id=? AND encerrado_em IS NULL",
+        (datetime.now(TZ).isoformat(), simulado_id))
+    con.commit()
+
+
+def simulado_sem_resultado(con, usuario_id: int):
+    """O ultimo simulado da pessoa que ainda nao tem nota lancada."""
+    return con.execute(
+        "SELECT * FROM simulados WHERE usuario_id=? AND total IS NULL"
+        " ORDER BY id DESC", (usuario_id,)).fetchone()
+
+
+def registrar_resultado(con, simulado_id: int, acertos: int, total: int) -> None:
+    con.execute("UPDATE simulados SET acertos=?, total=? WHERE id=?",
+                (acertos, total, simulado_id))
+    encerrar_simulado(con, simulado_id)
+
+
+def simulados_periodo(con, desde: str, ate: str) -> list:
+    return con.execute(
+        "SELECT usuario, materia, dia, acertos, total, minutos FROM simulados"
+        " WHERE dia BETWEEN ? AND ? AND total IS NOT NULL"
+        " ORDER BY dia DESC, id DESC", (desde, ate)).fetchall()
+
+
+def materias(con, prefixo: str = "", limite: int = 25) -> list[str]:
+    """Materia ja usada em questao, card ou aula, da mais frequente para a
+    menos. Alimenta o autocomplete: nome novo so nasce quando nao ha parecido."""
+    linhas = con.execute(
+        "SELECT nome, COUNT(*) n FROM ("
+        "  SELECT materia nome FROM questoes"
+        "  UNION ALL SELECT materia FROM cards"
+        "  UNION ALL SELECT materia FROM simulados"
+        "  UNION ALL SELECT disciplina FROM aulas)"
+        " WHERE nome LIKE ? GROUP BY nome ORDER BY n DESC, nome LIMIT ?",
+        (f"%{prefixo.lower().strip()}%", limite)).fetchall()
+    return [linha["nome"] for linha in linhas]
 
 
 def adesao(con, desde: str, ate: str) -> list:
@@ -491,8 +602,8 @@ def gravar_snapshot_anki(con, linhas: list[dict]) -> None:
         "INSERT OR REPLACE INTO anki_snapshot"
         " (dia, deck, novos, aprender, revisar, revisados_hoje, colhido_em)"
         " VALUES (?,?,?,?,?,?,?)",
-        [(hoje(), l["deck"], l["novos"], l["aprender"], l["revisar"],
-          l["revisados_hoje"], agora) for l in linhas])
+        [(hoje(), linha["deck"], linha["novos"], linha["aprender"],
+          linha["revisar"], linha["revisados_hoje"], agora) for linha in linhas])
     con.commit()
 
 

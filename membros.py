@@ -19,6 +19,7 @@ reais - por isso a listagem vem antes e o --remover e explicito.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -38,10 +39,11 @@ from config import credenciais  # noqa: E402
 TOKEN, GUILD_ID = credenciais.carregar()
 
 # Nomes de usuario (sem #tag) que nunca saem, ALEM do dono e do bot, que ja
-# sao isentos por codigo. A Giulia e a dona do servidor, entao ja esta coberta
-# por ali.
+# sao isentos por codigo. Vem do .env para nao versionar nome de gente:
+#   MEMBROS_ISENTOS=fulano,ciclana
 ISENTOS: set[str] = {
-    "lariszm",      # Larissa, entrou em 17/08/2026
+    nome.strip().lower()
+    for nome in os.getenv("MEMBROS_ISENTOS", "").split(",") if nome.strip()
 }
 
 

@@ -3,7 +3,7 @@
 FROM python:3.12-slim
 
 # Fuso horario dentro do container. Sem isto o bot dispara o briefing das 7h
-# em UTC, ou seja, as 4h da manha no horario dela.
+# em UTC, ou seja, as 4h da manha no horario de quem estuda.
 ENV TZ=America/Sao_Paulo
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 

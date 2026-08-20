@@ -13,7 +13,7 @@ Uso:
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 import discord
@@ -47,7 +47,7 @@ def idade(dt: datetime | None) -> str:
     deste diagnostico."""
     if dt is None:
         return "vazio"
-    dias = (datetime.now(timezone.utc) - dt).days
+    dias = (datetime.now(UTC) - dt).days
     if dias == 0:
         return "hoje"
     if dias == 1:
